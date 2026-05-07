@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(familyId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
+    match /families/{familyId} {
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow read, update: if isMember(familyId);
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if isMember(familyId) || (signedIn() && request.auth.uid == uid);
+
+        // A new user can join only when they know the Family ID and the Invite Code.
+        allow create: if signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode;
+
+        allow update, delete: if signedIn() && request.auth.uid == uid;
+      }
+
+      match /state/{docId} {
+        allow read, write: if isMember(familyId);
+      }
+    }
+  }
+}

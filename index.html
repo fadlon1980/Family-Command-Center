@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V3</title>
+  <title>Family Command Center V4</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -491,6 +491,55 @@
       </section>
 
       <section id="settings" class="screen">
+        
+          <article class="card cloud-card">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Shared family sync</p>
+                <h2>Cloud sync with Firebase</h2>
+                <p class="muted">Use this section to sign in, create your shared family space, and invite your wife/kids using a Family ID and Invite Code.</p>
+              </div>
+            </div>
+
+            <div id="cloudStatus" class="cloud-status">Cloud sync is not configured yet.</div>
+
+            <div class="cloud-grid">
+              <div class="cloud-box">
+                <h3>1. Sign in</h3>
+                <p class="muted">Each family member should use their own email and password.</p>
+                <form id="authForm" class="stack-form">
+                  <input id="authEmail" type="email" placeholder="Email" autocomplete="email" />
+                  <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" />
+                  <div class="button-row">
+                    <button type="button" id="loginBtn">Sign in</button>
+                    <button type="button" id="signupBtn" class="secondary">Create account</button>
+                    <button type="button" id="logoutBtn" class="ghost hidden">Sign out</button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="cloud-box">
+                <h3>2. Create family space</h3>
+                <p class="muted">Do this once, preferably from your phone/account. Then share the Family ID and Invite Code.</p>
+                <button type="button" id="createFamilyBtn">Create shared family space</button>
+                <div id="familyShareBox" class="share-box hidden"></div>
+              </div>
+
+              <div class="cloud-box">
+                <h3>3. Join existing family space</h3>
+                <p class="muted">Your wife/kids use the Family ID and Invite Code you share with them.</p>
+                <form id="joinFamilyForm" class="stack-form">
+                  <input id="joinFamilyId" placeholder="Family ID" autocomplete="off" />
+                  <input id="joinInviteCode" placeholder="Invite Code" autocomplete="off" />
+                  <button type="submit">Join family space</button>
+                </form>
+              </div>
+            </div>
+
+            <p class="muted small-note">Important: do not enter bank account numbers, credit card numbers, passwords, or highly sensitive medical details.</p>
+          </article>
+
+
         <article class="card">
           <h2>Family settings</h2>
           <p class="muted">Change names, export your data, or import a backup.</p>
@@ -523,6 +572,7 @@
     </main>
   </div>
 
+  <script src="firebase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

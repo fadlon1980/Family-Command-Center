@@ -1,19 +1,16 @@
-# Family Command Center PWA V3
+# Family Command Center PWA V4 — Firebase Shared Sync
 
-This version adds a dedicated school workload tracker and a more polished, friendly dashboard design.
+This version adds shared family cloud sync using Firebase Authentication and Cloud Firestore.
 
-## New in V3
+## New in V4
 
-- Homework & Exams tab
-- Dashboard card for upcoming homework, projects, quizzes, tests, and exams
-- Per-child homework and exam tracking
-- Kids cards now show each child's school workload
-- Quick capture can detect schoolwork items
-- More professional and friendly UI polish:
-  - cleaner dashboard summary cards
-  - softer visual hierarchy
-  - better card styling
-  - clear focus areas for family attention
+- Sign in / create account
+- Create shared family space
+- Join family space using Family ID + Invite Code
+- Sync the family dashboard across devices
+- Firebase setup file: `firebase-config.js`
+- Firestore rules file: `firestore.rules`
+- Step-by-step Firebase guide: `SETUP_FIREBASE.md`
 
 ## Included modules
 
@@ -33,50 +30,38 @@ This version adds a dedicated school workload tracker and a more polished, frien
 - Quick capture
 - Export/import backup
 - Installable PWA files
+- Firebase shared sync
 
-## Quick capture examples
+## Before uploading to GitHub Pages
 
-Try typing these in the Quick Capture box:
+Open `firebase-config.js` and replace the placeholder values with your Firebase Web app config.
 
-- Maya math homework due Friday
-- Daniel science exam next Thursday
-- History project due 5/20
-- Pay soccer fee $120 by Friday
-- Paid dentist bill $75
-- Buy milk, eggs, bananas
-- Decision: choose summer camp by Sunday
-- Pack basketball shoes tomorrow
-- Submit school permission slip by Thursday
+Then publish these files to the root of your GitHub Pages repository.
 
-## Current limitation
+## After uploading
 
-This version stores data locally in the browser only.
+1. Open the app.
+2. Go to Settings.
+3. Create/sign into your account.
+4. Create shared family space.
+5. Share Family ID and Invite Code with your wife/kids.
+6. Each family member signs in and joins the same family space.
 
-That means if you open it on your phone and your wife opens it on her phone, the data will not sync yet.
+## Important privacy note
 
-## Recommended next step
+Do not store highly sensitive data such as:
 
-Move the data from local browser storage to Firebase or Supabase.
+- Credit card numbers
+- Bank account numbers
+- Passwords
+- Highly sensitive medical details
 
-Recommended path:
+Use payment labels like:
 
-1. Keep this PWA design.
-2. Add login for you and your wife.
-3. Store data in a cloud database.
-4. Add push notifications.
-5. Add Google Calendar sync.
-6. Add WhatsApp capture later as a front-door input channel.
+- Soccer fee — $120
+- School lunch balance — $40
+- Dentist bill — $75
 
-## How to publish to GitHub Pages
+## MVP limitation
 
-1. Create a new GitHub repository.
-2. Upload all files from this folder.
-3. Go to repository Settings.
-4. Open Pages.
-5. Under Build and deployment, select:
-   - Source: Deploy from a branch
-   - Branch: main
-   - Folder: /root
-6. Save.
-7. After GitHub publishes it, open the live Pages link on your phone.
-8. On Android Chrome, tap the menu and choose "Add to Home screen" or use the in-app Install button if shown.
+This version syncs the whole family state as one Firestore document. This is good for a family pilot, but a future production version should store each task/payment/homework item as a separate Firestore document.

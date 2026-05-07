@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V3",
+  "name": "Family Command Center V4",
   "short_name": "Family Hub",
-  "description": "A private family command center for tasks, kids activities, homework, exams, payments, shopping, decisions, school admin, and routines.",
+  "description": "A shared family command center with Firebase cloud sync for tasks, homework, exams, payments, shopping, school admin, and routines.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

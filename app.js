@@ -1,4 +1,6 @@
-const STORAGE_KEY = "family-command-center-v2";
+const STORAGE_KEY = "family-command-center-v4";
+const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id";
+const FIREBASE_SDK_VERSION = "12.13.0";
 
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
@@ -168,12 +170,31 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (typeof scheduleCloudSave === "function") scheduleCloudSave();
 }
 
 let state = loadState();
 let taskFilter = "open";
 let paymentFilter = "open";
 let deferredInstallPrompt = null;
+
+let cloud = {
+  configured: false,
+  initialized: false,
+  ready: false,
+  user: null,
+  familyId: localStorage.getItem(CLOUD_FAMILY_ID_KEY) || "",
+  familyDoc: null,
+  app: null,
+  auth: null,
+  db: null,
+  stateRef: null,
+  unsubscribeState: null,
+  saveTimer: null,
+  applyingRemote: false,
+  lastError: "",
+  fb: null
+};
 
 function people() {
   return [...state.settings.parents, "Both", "All family", ...state.settings.children];
@@ -275,6 +296,7 @@ function render() {
   renderShopping();
   renderKids();
   renderRoutines();
+  renderCloudPanel();
 }
 
 function renderSummaryStrip() {
@@ -1175,5 +1197,342 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./service-worker.js").catch(() => {});
   });
 }
+
+
+function isFirebaseConfigured() {
+  const cfg = window.FAMILY_FIREBASE_CONFIG || {};
+  const required = ["apiKey", "authDomain", "projectId", "appId"];
+  return required.every(key => cfg[key] && !String(cfg[key]).includes("PASTE_"));
+}
+
+function setCloudStatus(message, level = "warn") {
+  const el = document.getElementById("cloudStatus");
+  if (!el) return;
+  el.textContent = message;
+  el.className = `cloud-status ${level}`;
+}
+
+function renderCloudPanel() {
+  const statusEl = document.getElementById("cloudStatus");
+  if (!statusEl) return;
+
+  const configured = isFirebaseConfigured();
+  const logoutBtn = document.getElementById("logoutBtn");
+  const shareBox = document.getElementById("familyShareBox");
+
+  if (!configured) {
+    setCloudStatus("Cloud sync is not configured yet. Add your Firebase project details to firebase-config.js, then upload the updated files.", "warn");
+    if (logoutBtn) logoutBtn.classList.add("hidden");
+    if (shareBox) shareBox.classList.add("hidden");
+    return;
+  }
+
+  if (!cloud.initialized) {
+    setCloudStatus("Firebase config found. Sign in to start cloud sync.", "warn");
+  } else if (!cloud.user) {
+    setCloudStatus("Firebase is ready. Please sign in or create an account.", "warn");
+  } else if (cloud.ready && cloud.familyId) {
+    setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${cloud.familyId}`, "good");
+  } else {
+    setCloudStatus(`Signed in as ${cloud.user.email || "user"}. Create or join a family space to start syncing.`, "warn");
+  }
+
+  if (logoutBtn) logoutBtn.classList.toggle("hidden", !cloud.user);
+
+  if (shareBox) {
+    if (cloud.familyDoc && cloud.familyId) {
+      const invite = cloud.familyDoc.inviteCode || "";
+      shareBox.classList.remove("hidden");
+      shareBox.innerHTML = `
+        <strong>Share this with your wife/kids:</strong><br>
+        Family ID: <code>${escapeHtml(cloud.familyId)}</code><br>
+        Invite Code: <code>${escapeHtml(invite)}</code><br>
+        <p class="muted small-note">They should open the app, create/sign into their account, then use Join existing family space.</p>
+      `;
+    } else {
+      shareBox.classList.add("hidden");
+    }
+  }
+}
+
+async function ensureFirebase() {
+  if (!isFirebaseConfigured()) {
+    renderCloudPanel();
+    throw new Error("Firebase config missing. Update firebase-config.js first.");
+  }
+
+  if (cloud.initialized) return cloud;
+
+  const [
+    appMod,
+    authMod,
+    fsMod
+  ] = await Promise.all([
+    import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`),
+    import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`),
+    import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-firestore.js`)
+  ]);
+
+  cloud.fb = {
+    initializeApp: appMod.initializeApp,
+    getAuth: authMod.getAuth,
+    onAuthStateChanged: authMod.onAuthStateChanged,
+    createUserWithEmailAndPassword: authMod.createUserWithEmailAndPassword,
+    signInWithEmailAndPassword: authMod.signInWithEmailAndPassword,
+    signOut: authMod.signOut,
+    getFirestore: fsMod.getFirestore,
+    doc: fsMod.doc,
+    setDoc: fsMod.setDoc,
+    getDoc: fsMod.getDoc,
+    onSnapshot: fsMod.onSnapshot,
+    serverTimestamp: fsMod.serverTimestamp
+  };
+
+  cloud.app = cloud.fb.initializeApp(window.FAMILY_FIREBASE_CONFIG);
+  cloud.auth = cloud.fb.getAuth(cloud.app);
+  cloud.db = cloud.fb.getFirestore(cloud.app);
+  cloud.initialized = true;
+
+  cloud.fb.onAuthStateChanged(cloud.auth, async user => {
+    cloud.user = user;
+    cloud.ready = false;
+    if (!user) {
+      if (cloud.unsubscribeState) cloud.unsubscribeState();
+      cloud.unsubscribeState = null;
+      cloud.stateRef = null;
+      cloud.familyDoc = null;
+      renderCloudPanel();
+      return;
+    }
+
+    renderCloudPanel();
+    const savedFamilyId = localStorage.getItem(CLOUD_FAMILY_ID_KEY);
+    if (savedFamilyId) {
+      try {
+        await connectFamily(savedFamilyId);
+      } catch (error) {
+        cloud.lastError = error.message;
+        setCloudStatus(`Signed in, but could not reconnect to family space: ${error.message}`, "bad");
+      }
+    }
+  });
+
+  renderCloudPanel();
+  return cloud;
+}
+
+function randomCode(prefix = "", length = 6) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = prefix;
+  for (let i = 0; i < length; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+async function signUpWithEmail(email, password) {
+  await ensureFirebase();
+  if (!email || !password) throw new Error("Enter email and password.");
+  await cloud.fb.createUserWithEmailAndPassword(cloud.auth, email, password);
+}
+
+async function signInWithEmail(email, password) {
+  await ensureFirebase();
+  if (!email || !password) throw new Error("Enter email and password.");
+  await cloud.fb.signInWithEmailAndPassword(cloud.auth, email, password);
+}
+
+async function signOutCloud() {
+  await ensureFirebase();
+  if (cloud.unsubscribeState) cloud.unsubscribeState();
+  cloud.unsubscribeState = null;
+  cloud.ready = false;
+  cloud.familyDoc = null;
+  await cloud.fb.signOut(cloud.auth);
+  renderCloudPanel();
+}
+
+async function createFamilySpace() {
+  await ensureFirebase();
+  if (!cloud.user) throw new Error("Sign in first.");
+
+  const familyId = randomCode("FAM-", 8);
+  const inviteCode = randomCode("", 6);
+  const familyRef = cloud.fb.doc(cloud.db, "families", familyId);
+  const memberRef = cloud.fb.doc(cloud.db, "families", familyId, "members", cloud.user.uid);
+  const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+
+  await cloud.fb.setDoc(familyRef, {
+    familyName: state.settings.familyName || "Family",
+    createdBy: cloud.user.uid,
+    createdAt: cloud.fb.serverTimestamp(),
+    inviteCode
+  });
+
+  await cloud.fb.setDoc(memberRef, {
+    email: cloud.user.email || "",
+    role: "owner",
+    joinedAt: cloud.fb.serverTimestamp(),
+    inviteCode
+  });
+
+  await cloud.fb.setDoc(stateRef, {
+    data: state,
+    updatedAt: cloud.fb.serverTimestamp(),
+    updatedBy: cloud.user.uid
+  });
+
+  localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
+  await connectFamily(familyId);
+}
+
+async function joinFamilySpace(familyId, inviteCode) {
+  await ensureFirebase();
+  if (!cloud.user) throw new Error("Sign in first.");
+  if (!familyId || !inviteCode) throw new Error("Enter Family ID and Invite Code.");
+
+  familyId = familyId.trim().toUpperCase();
+  inviteCode = inviteCode.trim().toUpperCase();
+
+  const memberRef = cloud.fb.doc(cloud.db, "families", familyId, "members", cloud.user.uid);
+  await cloud.fb.setDoc(memberRef, {
+    email: cloud.user.email || "",
+    role: "member",
+    joinedAt: cloud.fb.serverTimestamp(),
+    inviteCode
+  });
+
+  localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
+  await connectFamily(familyId);
+}
+
+async function connectFamily(familyId) {
+  await ensureFirebase();
+  if (!cloud.user) throw new Error("Sign in first.");
+
+  familyId = familyId.trim().toUpperCase();
+  cloud.familyId = familyId;
+  localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
+
+  if (cloud.unsubscribeState) cloud.unsubscribeState();
+
+  const familyRef = cloud.fb.doc(cloud.db, "families", familyId);
+  const familySnap = await cloud.fb.getDoc(familyRef);
+  if (familySnap.exists()) {
+    cloud.familyDoc = familySnap.data();
+  }
+
+  cloud.stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+
+  cloud.unsubscribeState = cloud.fb.onSnapshot(cloud.stateRef, snap => {
+    if (!snap.exists()) return;
+    const incoming = snap.data();
+    if (!incoming || !incoming.data) return;
+
+    cloud.applyingRemote = true;
+    state = normalizeState(incoming.data);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    cloud.ready = true;
+    cloud.applyingRemote = false;
+    render();
+  }, error => {
+    cloud.ready = false;
+    cloud.lastError = error.message;
+    setCloudStatus(`Cloud sync error: ${error.message}`, "bad");
+  });
+
+  cloud.ready = true;
+  renderCloudPanel();
+}
+
+function scheduleCloudSave() {
+  if (!cloud || !cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
+  clearTimeout(cloud.saveTimer);
+  cloud.saveTimer = setTimeout(saveCloudNow, 700);
+}
+
+async function saveCloudNow() {
+  if (!cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
+
+  try {
+    await cloud.fb.setDoc(cloud.stateRef, {
+      data: state,
+      updatedAt: cloud.fb.serverTimestamp(),
+      updatedBy: cloud.user.uid
+    }, { merge: true });
+  } catch (error) {
+    cloud.lastError = error.message;
+    setCloudStatus(`Could not save to cloud: ${error.message}`, "bad");
+  }
+}
+
+function wireCloudControls() {
+  const loginBtn = document.getElementById("loginBtn");
+  const signupBtn = document.getElementById("signupBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const createFamilyBtn = document.getElementById("createFamilyBtn");
+  const joinForm = document.getElementById("joinFamilyForm");
+
+  loginBtn?.addEventListener("click", async () => {
+    try {
+      await signInWithEmail(
+        document.getElementById("authEmail").value.trim(),
+        document.getElementById("authPassword").value
+      );
+    } catch (error) {
+      setCloudStatus(`Sign-in failed: ${error.message}`, "bad");
+    }
+  });
+
+  signupBtn?.addEventListener("click", async () => {
+    try {
+      await signUpWithEmail(
+        document.getElementById("authEmail").value.trim(),
+        document.getElementById("authPassword").value
+      );
+    } catch (error) {
+      setCloudStatus(`Account creation failed: ${error.message}`, "bad");
+    }
+  });
+
+  logoutBtn?.addEventListener("click", async () => {
+    try {
+      await signOutCloud();
+    } catch (error) {
+      setCloudStatus(`Sign-out failed: ${error.message}`, "bad");
+    }
+  });
+
+  createFamilyBtn?.addEventListener("click", async () => {
+    try {
+      await createFamilySpace();
+    } catch (error) {
+      setCloudStatus(`Could not create family space: ${error.message}`, "bad");
+    }
+  });
+
+  joinForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await joinFamilySpace(
+        document.getElementById("joinFamilyId").value,
+        document.getElementById("joinInviteCode").value
+      );
+    } catch (error) {
+      setCloudStatus(`Could not join family space: ${error.message}`, "bad");
+    }
+  });
+}
+
+window.addEventListener("load", async () => {
+  wireCloudControls();
+  renderCloudPanel();
+  if (isFirebaseConfigured()) {
+    try {
+      await ensureFirebase();
+    } catch (error) {
+      setCloudStatus(`Firebase setup problem: ${error.message}`, "bad");
+    }
+  }
+});
+
 
 render();
