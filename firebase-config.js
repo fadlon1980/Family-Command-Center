@@ -1,14 +1,11 @@
 // Family Command Center V4 - Firebase config
-// 1. Create a Firebase project.
-// 2. Register a Web app in Firebase.
-// 3. Copy the Firebase config object here.
-// 4. Keep the variable name exactly as FAMILY_FIREBASE_CONFIG.
+// Keep the variable name exactly as FAMILY_FIREBASE_CONFIG.
 
 window.FAMILY_FIREBASE_CONFIG = {
-  apiKey: "PASTE_API_KEY_HERE",
-  authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
-  projectId: "PASTE_PROJECT_ID",
-  storageBucket: "PASTE_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "PASTE_MESSAGING_SENDER_ID",
-  appId: "PASTE_APP_ID"
+  apiKey: "AIzaSyC8Gxj34tTrZcky0C2SJ_rkbEEAeGJ7mkg",
+  authDomain: "fadlon-family-hub.firebaseapp.com",
+  projectId: "fadlon-family-hub",
+  storageBucket: "fadlon-family-hub.firebasestorage.app",
+  messagingSenderId: "633497042128",
+  appId: "1:633497042128:web:89320ba23532f2eb71f2d5"
 };
