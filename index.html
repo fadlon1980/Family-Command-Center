@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>Family Command Center</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Family Command Center</p>
+        <h1 id="familyTitle">Family Hub</h1>
+        <p id="todayLabel" class="muted"></p>
+      </div>
+      <button id="installBtn" class="ghost hidden">Install</button>
+    </header>
+
+    <section class="quick-card">
+      <div class="quick-header">
+        <div>
+          <h2>Quick capture</h2>
+          <p class="muted">Add a task, event, shopping item, or note in a few seconds.</p>
+        </div>
+      </div>
+      <form id="quickForm" class="quick-form">
+        <input id="quickText" type="text" placeholder="Example: Maya soccer tomorrow 5pm, buy milk, renew passport Friday" autocomplete="off" />
+        <select id="quickType" aria-label="Item type">
+          <option value="auto">Auto</option>
+          <option value="task">Task</option>
+          <option value="event">Event</option>
+          <option value="shopping">Shopping</option>
+          <option value="note">Note</option>
+        </select>
+        <button type="submit">Add</button>
+      </form>
+    </section>
+
+    <nav class="tabs" aria-label="Main navigation">
+      <button class="tab active" data-screen="today">Today</button>
+      <button class="tab" data-screen="tasks">Tasks</button>
+      <button class="tab" data-screen="calendar">Calendar</button>
+      <button class="tab" data-screen="shopping">Shopping</button>
+      <button class="tab" data-screen="kids">Kids</button>
+      <button class="tab" data-screen="routines">Routines</button>
+      <button class="tab" data-screen="settings">Settings</button>
+    </nav>
+
+    <main>
+      <section id="today" class="screen active">
+        <div class="grid">
+          <article class="card">
+            <h2>Today</h2>
+            <div id="todayEvents" class="list"></div>
+          </article>
+          <article class="card">
+            <h2>Tasks needing attention</h2>
+            <div id="todayTasks" class="list"></div>
+          </article>
+          <article class="card">
+            <h2>Tomorrow prep</h2>
+            <div id="tomorrowPrep" class="list"></div>
+          </article>
+          <article class="card">
+            <h2>Shopping open items</h2>
+            <div id="todayShopping" class="list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="tasks" class="screen">
+        <article class="card">
+          <div class="section-title">
+            <div>
+              <h2>Family tasks</h2>
+              <p class="muted">Track ownership, due dates, and status.</p>
+            </div>
+          </div>
+          <form id="taskForm" class="form-grid">
+            <input id="taskTitle" placeholder="Task name" required />
+            <select id="taskOwner"></select>
+            <input id="taskDue" type="date" />
+            <select id="taskCategory">
+              <option>School</option>
+              <option>Home</option>
+              <option>Health</option>
+              <option>Admin</option>
+              <option>Finance</option>
+              <option>Shopping</option>
+              <option>Kids Activity</option>
+              <option>Other</option>
+            </select>
+            <select id="taskPriority">
+              <option value="Normal">Normal</option>
+              <option value="High">High</option>
+              <option value="Low">Low</option>
+            </select>
+            <button type="submit">Add task</button>
+          </form>
+          <div class="filters">
+            <button class="pill active" data-task-filter="open">Open</button>
+            <button class="pill" data-task-filter="all">All</button>
+            <button class="pill" data-task-filter="done">Done</button>
+          </div>
+          <div id="taskList" class="list"></div>
+        </article>
+      </section>
+
+      <section id="calendar" class="screen">
+        <article class="card">
+          <div class="section-title">
+            <div>
+              <h2>Family calendar items</h2>
+              <p class="muted">Manual events for now. Google Calendar sync can be added next.</p>
+            </div>
+          </div>
+          <form id="eventForm" class="form-grid">
+            <input id="eventTitle" placeholder="Event / activity" required />
+            <select id="eventPerson"></select>
+            <input id="eventDate" type="date" required />
+            <input id="eventTime" type="time" />
+            <input id="eventLocation" placeholder="Location" />
+            <button type="submit">Add event</button>
+          </form>
+          <div id="eventList" class="list"></div>
+        </article>
+      </section>
+
+      <section id="shopping" class="screen">
+        <article class="card">
+          <div class="section-title">
+            <div>
+              <h2>Shopping list</h2>
+              <p class="muted">For groceries, pharmacy, school supplies, and home items.</p>
+            </div>
+          </div>
+          <form id="shoppingForm" class="inline-form">
+            <input id="shoppingName" placeholder="Add item" required />
+            <select id="shoppingStore">
+              <option>Grocery</option>
+              <option>Costco</option>
+              <option>Pharmacy</option>
+              <option>Target</option>
+              <option>School</option>
+              <option>Other</option>
+            </select>
+            <button type="submit">Add</button>
+          </form>
+          <div id="shoppingList" class="list"></div>
+        </article>
+      </section>
+
+      <section id="kids" class="screen">
+        <div id="kidsGrid" class="grid"></div>
+      </section>
+
+      <section id="routines" class="screen">
+        <div class="grid">
+          <article class="card">
+            <h2>Morning checklist</h2>
+            <div id="morningRoutine" class="list"></div>
+            <form class="inline-form routine-form" data-routine="morning">
+              <input placeholder="Add morning item" required />
+              <button>Add</button>
+            </form>
+          </article>
+          <article class="card">
+            <h2>Evening checklist</h2>
+            <div id="eveningRoutine" class="list"></div>
+            <form class="inline-form routine-form" data-routine="evening">
+              <input placeholder="Add evening item" required />
+              <button>Add</button>
+            </form>
+          </article>
+          <article class="card">
+            <h2>Weekly planning</h2>
+            <div id="weeklyRoutine" class="list"></div>
+            <form class="inline-form routine-form" data-routine="weekly">
+              <input placeholder="Add weekly item" required />
+              <button>Add</button>
+            </form>
+          </article>
+        </div>
+      </section>
+
+      <section id="settings" class="screen">
+        <article class="card">
+          <h2>Family settings</h2>
+          <p class="muted">Change names, export your data, or import a backup.</p>
+          <form id="settingsForm" class="settings-form">
+            <label>Family name
+              <input id="familyName" />
+            </label>
+            <label>Parent 1
+              <input id="parent1" />
+            </label>
+            <label>Parent 2
+              <input id="parent2" />
+            </label>
+            <label>Children names, comma separated
+              <input id="childrenNames" placeholder="Child 1, Child 2, Child 3" />
+            </label>
+            <button type="submit">Save settings</button>
+          </form>
+          <div class="settings-actions">
+            <button id="exportBtn" class="secondary">Export backup</button>
+            <label class="file-label">
+              Import backup
+              <input id="importFile" type="file" accept="application/json" />
+            </label>
+            <button id="resetBtn" class="danger">Reset demo data</button>
+          </div>
+          <pre id="exportBox" class="export-box hidden"></pre>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <template id="emptyTemplate">
+    <div class="empty">Nothing here yet.</div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
