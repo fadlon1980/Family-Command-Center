@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center",
+  "name": "Family Command Center V3",
   "short_name": "Family Hub",
-  "description": "A private family command center for tasks, kids activities, shopping, and routines.",
+  "description": "A private family command center for tasks, kids activities, homework, exams, payments, shopping, decisions, school admin, and routines.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

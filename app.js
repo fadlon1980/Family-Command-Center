@@ -1,17 +1,59 @@
-const STORAGE_KEY = "family-command-center-v1";
+const STORAGE_KEY = "family-command-center-v2";
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+function uid() {
+  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+}
 
-function addDays(date, days) {
-  const d = new Date(date);
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dateFromIso(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function isoFromDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(value, days) {
+  const d = value instanceof Date ? new Date(value) : dateFromIso(value) || new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return isoFromDate(d);
+}
+
+function daysBetween(fromIso, toIso) {
+  const from = dateFromIso(fromIso);
+  const to = dateFromIso(toIso);
+  if (!from || !to) return 9999;
+  return Math.round((to - from) / 86400000);
+}
+
+function firstDayOfMonth() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+}
+
+function lastDayOfMonth() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+}
+
+function firstDayOfYear() {
+  const d = new Date();
+  return new Date(d.getFullYear(), 0, 1).toISOString().slice(0, 10);
+}
+
+function lastDayOfYear() {
+  const d = new Date();
+  return new Date(d.getFullYear(), 11, 31).toISOString().slice(0, 10);
 }
 
 function formatDate(iso) {
   if (!iso) return "No date";
-  const [y, m, d] = iso.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
+  const date = dateFromIso(iso);
   return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
@@ -23,71 +65,115 @@ function formatTime(time) {
   return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-function uid() {
-  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+function money(value) {
+  const amount = Number(value || 0);
+  return amount.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 }
 
-const demoData = {
-  settings: {
-    familyName: "Fadlon Family",
-    parents: ["Elad", "Wife"],
-    children: ["Kid 1", "Kid 2", "Kid 3"]
-  },
-  tasks: [
-    { id: uid(), title: "Review school forms", owner: "Elad", due: todayIso(), category: "School", priority: "High", done: false, createdAt: Date.now() },
-    { id: uid(), title: "Prepare activity bags for tomorrow", owner: "Both", due: addDays(new Date(), 1), category: "Kids Activity", priority: "Normal", done: false, createdAt: Date.now() }
-  ],
-  events: [
-    { id: uid(), title: "Basketball practice", person: "Kid 1", date: todayIso(), time: "17:30", location: "Local gym", notes: "", createdAt: Date.now() },
-    { id: uid(), title: "School drop-off", person: "All family", date: todayIso(), time: "07:45", location: "School", notes: "", createdAt: Date.now() }
-  ],
-  shopping: [
-    { id: uid(), name: "Milk", store: "Grocery", done: false, createdAt: Date.now() },
-    { id: uid(), name: "Fruit for lunch boxes", store: "Grocery", done: false, createdAt: Date.now() }
-  ],
-  notes: [],
-  routines: {
-    morning: [
-      { id: uid(), text: "Lunch boxes ready", doneDate: "" },
-      { id: uid(), text: "Water bottles packed", doneDate: "" },
-      { id: uid(), text: "Check today pickups/activities", doneDate: "" }
-    ],
-    evening: [
-      { id: uid(), text: "Prepare clothes and bags", doneDate: "" },
-      { id: uid(), text: "Review tomorrow calendar", doneDate: "" },
-      { id: uid(), text: "Charge devices", doneDate: "" }
-    ],
-    weekly: [
-      { id: uid(), text: "Review school emails and forms", doneDate: "" },
-      { id: uid(), text: "Plan kids activities and rides", doneDate: "" },
-      { id: uid(), text: "Review grocery needs", doneDate: "" }
-    ]
-  }
-};
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+  }[ch]));
+}
 
-let state = loadState();
-let taskFilter = "open";
-let deferredInstallPrompt = null;
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function demoData() {
+  return {
+    settings: {
+      familyName: "Fadlon Family",
+      parents: ["Elad", "Wife"],
+      children: ["Kid 1", "Kid 2", "Kid 3"]
+    },
+    tasks: [
+      { id: uid(), title: "Review school forms", owner: "Elad", due: todayIso(), category: "School", priority: "High", done: false, createdAt: Date.now() },
+      { id: uid(), title: "Prepare activity bags for tomorrow", owner: "Both", due: addDays(todayIso(), 1), category: "Kids Activity", priority: "Normal", done: false, createdAt: Date.now() }
+    ],
+    events: [
+      { id: uid(), title: "Basketball practice", person: "Kid 1", date: todayIso(), time: "17:30", location: "Local gym", notes: "", createdAt: Date.now() },
+      { id: uid(), title: "School drop-off", person: "All family", date: todayIso(), time: "07:45", location: "School", notes: "", createdAt: Date.now() }
+    ],
+    payments: [
+      { id: uid(), name: "Soccer fee", amount: 120, due: addDays(todayIso(), 2), category: "Kids Activities", owner: "Both", frequency: "Monthly", method: "Credit card", status: "Upcoming", paidDate: "", notes: "", createdAt: Date.now() },
+      { id: uid(), name: "School lunch balance", amount: 40, due: todayIso(), category: "School", owner: "Elad", frequency: "One-time", method: "Credit card", status: "Upcoming", paidDate: "", notes: "", createdAt: Date.now() },
+      { id: uid(), name: "Groceries", amount: 165, due: todayIso(), category: "Groceries", owner: "Both", frequency: "Weekly", method: "Credit card", status: "Paid", paidDate: todayIso(), notes: "", createdAt: Date.now() }
+    ],
+    shopping: [
+      { id: uid(), name: "Milk", store: "Grocery", done: false, createdAt: Date.now() },
+      { id: uid(), name: "Fruit for lunch boxes", store: "Grocery", done: false, createdAt: Date.now() }
+    ],
+    inbox: [
+      { id: uid(), text: "Check if basketball payment was made", type: "Money", createdAt: Date.now() },
+      { id: uid(), text: "Ask teacher about field trip details", type: "School", createdAt: Date.now() }
+    ],
+    prepItems: [
+      { id: uid(), text: "Pack water bottles", owner: "Both", date: addDays(todayIso(), 1), done: false, createdAt: Date.now() },
+      { id: uid(), text: "Prepare sports shoes", owner: "Elad", date: addDays(todayIso(), 1), done: false, createdAt: Date.now() }
+    ],
+    decisions: [
+      { id: uid(), title: "Choose summer camp", owner: "Both", due: addDays(todayIso(), 5), options: "Camp A / Camp B", status: "Open", createdAt: Date.now() }
+    ],
+    adminItems: [
+      { id: uid(), title: "Submit field trip permission slip", category: "School form", owner: "Wife", due: addDays(todayIso(), 3), notes: "Check school email", status: "Open", createdAt: Date.now() }
+    ],
+    schoolItems: [
+      { id: uid(), title: "Math homework - chapter practice", child: "Kid 1", type: "Homework", subject: "Math", due: addDays(todayIso(), 2), priority: "Normal", status: "Open", notes: "Check workbook", createdAt: Date.now() },
+      { id: uid(), title: "Science exam", child: "Kid 2", type: "Exam", subject: "Science", due: addDays(todayIso(), 6), priority: "High", status: "Open", notes: "Review study guide", createdAt: Date.now() }
+    ],
+    routines: {
+      morning: [
+        { id: uid(), text: "Lunch boxes ready", doneDate: "" },
+        { id: uid(), text: "Water bottles packed", doneDate: "" },
+        { id: uid(), text: "Check today pickups/activities", doneDate: "" }
+      ],
+      evening: [
+        { id: uid(), text: "Prepare clothes and bags", doneDate: "" },
+        { id: uid(), text: "Review tomorrow calendar", doneDate: "" },
+        { id: uid(), text: "Charge devices", doneDate: "" }
+      ],
+      weekly: [
+        { id: uid(), text: "Review school emails and forms", doneDate: "" },
+        { id: uid(), text: "Plan kids activities and rides", doneDate: "" },
+        { id: uid(), text: "Review grocery needs and weekly payments", doneDate: "" }
+      ]
+    }
+  };
+}
+
+function normalizeState(saved) {
+  const fresh = demoData();
+  const merged = {
+    ...fresh,
+    ...saved,
+    settings: { ...fresh.settings, ...(saved?.settings || {}) },
+    routines: { ...fresh.routines, ...(saved?.routines || {}) }
+  };
+  ["tasks", "events", "payments", "shopping", "inbox", "prepItems", "decisions", "adminItems", "schoolItems"].forEach(key => {
+    if (!Array.isArray(merged[key])) merged[key] = [];
+  });
+  return merged;
+}
 
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return structuredClone(demoData);
+  if (!saved) return demoData();
   try {
-    const parsed = JSON.parse(saved);
-    return {
-      ...structuredClone(demoData),
-      ...parsed,
-      settings: { ...demoData.settings, ...(parsed.settings || {}) },
-      routines: { ...demoData.routines, ...(parsed.routines || {}) }
-    };
+    return normalizeState(JSON.parse(saved));
   } catch {
-    return structuredClone(demoData);
+    return demoData();
   }
 }
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
+
+let state = loadState();
+let taskFilter = "open";
+let paymentFilter = "open";
+let deferredInstallPrompt = null;
 
 function people() {
   return [...state.settings.parents, "Both", "All family", ...state.settings.children];
@@ -97,36 +183,27 @@ function setOptions(select, values, selected) {
   select.innerHTML = values.map(v => `<option value="${escapeHtml(v)}" ${v === selected ? "selected" : ""}>${escapeHtml(v)}</option>`).join("");
 }
 
-function escapeHtml(value) {
-  return String(value || "").replace(/[&<>"']/g, ch => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[ch]));
-}
-
-function inferQuickType(text, requestedType) {
-  if (requestedType !== "auto") return requestedType;
-  const lower = text.toLowerCase();
-  if (lower.startsWith("buy ") || lower.startsWith("shopping ") || lower.includes("grocery")) return "shopping";
-  if (lower.includes(" at ") || lower.includes("tomorrow") || lower.includes("today") || /\b\d{1,2}(:\d{2})?\s?(am|pm)\b/i.test(lower)) return "event";
-  if (lower.startsWith("note ")) return "note";
-  return "task";
-}
-
 function extractDate(text) {
   const lower = text.toLowerCase();
-  if (lower.includes("tomorrow")) return addDays(new Date(), 1);
+  if (lower.includes("tomorrow")) return addDays(todayIso(), 1);
   if (lower.includes("today")) return todayIso();
-  if (lower.includes("friday")) return nextWeekday(5);
-  if (lower.includes("saturday")) return nextWeekday(6);
-  if (lower.includes("sunday")) return nextWeekday(0);
-  if (lower.includes("monday")) return nextWeekday(1);
-  if (lower.includes("tuesday")) return nextWeekday(2);
-  if (lower.includes("wednesday")) return nextWeekday(3);
-  if (lower.includes("thursday")) return nextWeekday(4);
+
+  const weekdays = [
+    ["sunday", 0], ["monday", 1], ["tuesday", 2], ["wednesday", 3],
+    ["thursday", 4], ["friday", 5], ["saturday", 6]
+  ];
+  for (const [name, day] of weekdays) {
+    if (lower.includes(name)) return nextWeekday(day);
+  }
+
+  const mmdd = lower.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  if (mmdd) {
+    const now = new Date();
+    const year = mmdd[3] ? Number(mmdd[3].length === 2 ? "20" + mmdd[3] : mmdd[3]) : now.getFullYear();
+    const d = new Date(year, Number(mmdd[1]) - 1, Number(mmdd[2]));
+    return isoFromDate(d);
+  }
+
   return "";
 }
 
@@ -136,7 +213,7 @@ function nextWeekday(targetDay) {
   let diff = (targetDay + 7 - current) % 7;
   if (diff === 0) diff = 7;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return isoFromDate(d);
 }
 
 function extractTime(text) {
@@ -151,49 +228,94 @@ function extractTime(text) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function extractAmount(text) {
+  const match = text.match(/\$?\s?(\d+(?:\.\d{1,2})?)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function inferQuickType(text, requestedType) {
+  if (requestedType !== "auto") return requestedType;
+  const lower = text.toLowerCase();
+  if (lower.startsWith("buy ") || lower.startsWith("shopping ") || lower.includes("grocery")) return "shopping";
+  if (lower.startsWith("decision") || lower.includes("decide ") || lower.includes("choose ")) return "decision";
+  if (lower.includes("homework") || lower.includes("exam") || lower.includes("test") || lower.includes("quiz") || lower.includes("assignment") || lower.includes("project due")) return "schoolwork";
+  if (lower.includes("tomorrow prep") || lower.startsWith("prep ") || lower.startsWith("pack ")) return "prep";
+  if (lower.includes("school form") || lower.includes("permission slip") || lower.includes("passport") || lower.includes("document")) return "admin";
+  if (lower.startsWith("paid ") || lower.startsWith("pay ") || lower.includes("$") || lower.includes("bill") || lower.includes("fee")) return "payment";
+  if (lower.includes(" at ") || lower.includes("tomorrow") || lower.includes("today") || /\b\d{1,2}(:\d{2})?\s?(am|pm)\b/i.test(lower)) return "event";
+  if (lower.startsWith("note ") || lower.startsWith("inbox ")) return "inbox";
+  return "task";
+}
+
 function render() {
   document.getElementById("familyTitle").textContent = `${state.settings.familyName} Hub`;
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
-  setOptions(document.getElementById("taskOwner"), people(), "Both");
-  setOptions(document.getElementById("eventPerson"), people(), "All family");
+  ["taskOwner", "eventPerson", "paymentOwner", "prepOwner", "decisionOwner", "adminOwner", "schoolChild"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) setOptions(el, people(), id === "paymentOwner" ? "Both" : "Both");
+  });
 
   document.getElementById("familyName").value = state.settings.familyName;
   document.getElementById("parent1").value = state.settings.parents[0] || "";
   document.getElementById("parent2").value = state.settings.parents[1] || "";
   document.getElementById("childrenNames").value = state.settings.children.join(", ");
 
+  if (!document.getElementById("prepDate").value) {
+    document.getElementById("prepDate").value = addDays(todayIso(), 1);
+  }
+
+  renderSummaryStrip();
   renderToday();
   renderTasks();
   renderEvents();
+  renderLearning();
+  renderPayments();
+  renderPlanning();
   renderShopping();
   renderKids();
   renderRoutines();
 }
 
+function renderSummaryStrip() {
+  const today = todayIso();
+  const weekEnd = addDays(today, 7);
+  const openTasks = state.tasks.filter(t => !t.done).length;
+  const duePayments = state.payments.filter(p => p.status !== "Paid" && p.due && p.due <= weekEnd).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const openAdmin = state.adminItems.filter(a => a.status !== "Done").length;
+  const inbox = state.inbox.length;
+  const schoolDue = state.schoolItems.filter(s => s.status !== "Done" && s.due && s.due <= weekEnd).length;
+
+  document.getElementById("summaryStrip").innerHTML = `
+    <div class="summary-box"><div class="number">${openTasks}</div><div class="label">Open tasks</div></div>
+    <div class="summary-box"><div class="number">${money(duePayments)}</div><div class="label">Payments due next 7 days</div></div>
+    <div class="summary-box"><div class="number">${schoolDue}</div><div class="label">Homework/exams due</div></div>
+    <div class="summary-box"><div class="number">${openAdmin}</div><div class="label">School/admin open</div></div>
+    <div class="summary-box"><div class="number">${inbox}</div><div class="label">Inbox items</div></div>
+  `;
+}
+
 function renderToday() {
   const today = todayIso();
-  const tomorrow = addDays(new Date(), 1);
+  const tomorrow = addDays(today, 1);
+  const weekEnd = addDays(today, 7);
+
   const todaysEvents = state.events.filter(e => e.date === today).sort(sortEvents);
-  const attentionTasks = state.tasks
-    .filter(t => !t.done && (!t.due || t.due <= today))
-    .sort(sortTasks);
-  const tomorrowItems = [
-    ...state.events.filter(e => e.date === tomorrow).map(e => ({
-      id: e.id,
-      title: e.title,
-      meta: `${formatDate(e.date)} ${formatTime(e.time)} · ${e.person}${e.location ? " · " + e.location : ""}`
-    })),
-    ...state.tasks.filter(t => !t.done && t.due === tomorrow).map(t => ({
-      id: t.id,
-      title: t.title,
-      meta: `Task · ${t.owner} · ${t.category}`
-    }))
-  ];
+  const attentionTasks = state.tasks.filter(t => !t.done && (!t.due || t.due <= today)).sort(sortTasks);
+  const paymentAttention = state.payments.filter(p => p.status !== "Paid" && p.due && p.due <= weekEnd).sort(sortPayments);
+  const prep = state.prepItems.filter(p => !p.done && (!p.date || p.date <= tomorrow)).sort(sortPrep);
+  const decisions = state.decisions.filter(d => d.status !== "Done").sort(sortDecisions).slice(0, 5);
+  const admin = state.adminItems.filter(a => a.status !== "Done").sort(sortAdmin).slice(0, 5);
+  const schoolwork = state.schoolItems.filter(s => s.status !== "Done" && (!s.due || s.due <= weekEnd)).sort(sortSchool).slice(0, 5);
 
   renderList("todayEvents", todaysEvents, renderEventItem, "No events for today.");
+  renderList("todayPayments", paymentAttention, renderPaymentItem, "No payments due in the next 7 days.");
   renderList("todayTasks", attentionTasks, renderTaskItem, "No urgent or overdue tasks.");
-  renderSimpleList("tomorrowPrep", tomorrowItems, "Nothing planned for tomorrow yet.");
+  renderList("tomorrowPrepDashboard", prep, renderPrepItem, "No tomorrow prep items yet.");
+  renderList("todaySchoolwork", schoolwork, renderSchoolItem, "No homework or exams due soon.");
+  renderList("todayDecisions", decisions, renderDecisionItem, "No open decisions.");
+  renderList("todayAdmin", admin, renderAdminItem, "No open school/admin items.");
+  renderList("todayInbox", state.inbox.slice(0, 5), renderInboxItem, "Inbox is clear.");
   renderList("todayShopping", state.shopping.filter(i => !i.done).slice(0, 6), renderShoppingItem, "Shopping list is clear.");
 }
 
@@ -210,6 +332,74 @@ function renderEvents() {
   renderList("eventList", events, renderEventItem, "No calendar items yet.");
 }
 
+
+function renderLearning() {
+  const today = todayIso();
+  const weekEnd = addDays(today, 7);
+  const monthStart = firstDayOfMonth();
+  const monthEnd = lastDayOfMonth();
+
+  const dueWeek = state.schoolItems
+    .filter(s => s.status !== "Done" && s.due && s.due <= weekEnd)
+    .sort(sortSchool);
+
+  const dueMonth = state.schoolItems
+    .filter(s => s.status !== "Done" && s.due >= monthStart && s.due <= monthEnd)
+    .sort(sortSchool);
+
+  renderList("schoolDueWeek", dueWeek, renderSchoolItem, "No homework or exams due in the next 7 days.");
+  renderList("schoolDueMonth", dueMonth, renderSchoolItem, "No homework or exams due this month.");
+  renderList("schoolItemList", [...state.schoolItems].sort(sortSchool), renderSchoolItem, "No homework or exams added yet.");
+}
+
+function renderPayments() {
+  const today = todayIso();
+  const weekEnd = addDays(today, 7);
+  const monthStart = firstDayOfMonth();
+  const monthEnd = lastDayOfMonth();
+  const yearStart = firstDayOfYear();
+  const yearEnd = lastDayOfYear();
+
+  const paidWeek = sumPayments(state.payments.filter(p => p.status === "Paid" && p.paidDate >= today && p.paidDate <= weekEnd));
+  const paidMonth = sumPayments(state.payments.filter(p => p.status === "Paid" && p.paidDate >= monthStart && p.paidDate <= monthEnd));
+  const paidYear = sumPayments(state.payments.filter(p => p.status === "Paid" && p.paidDate >= yearStart && p.paidDate <= yearEnd));
+  const dueMonth = sumPayments(state.payments.filter(p => p.status !== "Paid" && p.due >= monthStart && p.due <= monthEnd));
+  const expectedMonth = paidMonth + dueMonth;
+
+  const categoryMap = {};
+  state.payments
+    .filter(p => ((p.status === "Paid" && p.paidDate >= monthStart && p.paidDate <= monthEnd) || (p.status !== "Paid" && p.due >= monthStart && p.due <= monthEnd)))
+    .forEach(p => categoryMap[p.category] = (categoryMap[p.category] || 0) + Number(p.amount || 0));
+  const categories = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+  document.getElementById("moneySummary").innerHTML = `
+    <div class="money-tile"><strong>${money(paidWeek)}</strong><span>Paid this week</span></div>
+    <div class="money-tile"><strong>${money(paidMonth)}</strong><span>Paid this month</span></div>
+    <div class="money-tile"><strong>${money(dueMonth)}</strong><span>Still due this month</span></div>
+    <div class="money-tile"><strong>${money(expectedMonth)}</strong><span>Expected month total</span></div>
+    <div class="money-tile"><strong>${money(paidYear)}</strong><span>Paid this year</span></div>
+    ${categories.map(([cat, value]) => `<div class="money-tile"><strong>${money(value)}</strong><span>${escapeHtml(cat)}</span></div>`).join("")}
+  `;
+
+  renderList("paymentsDueWeek", state.payments.filter(p => p.status !== "Paid" && p.due && p.due <= weekEnd).sort(sortPayments), renderPaymentItem, "No payments due this week.");
+  renderList("paymentsDueMonth", state.payments.filter(p => p.status !== "Paid" && p.due >= monthStart && p.due <= monthEnd).sort(sortPayments), renderPaymentItem, "No payments due this month.");
+  renderList("paymentsPaidMonth", state.payments.filter(p => p.status === "Paid" && p.paidDate >= monthStart && p.paidDate <= monthEnd).sort(sortPayments), renderPaymentItem, "No paid expenses logged this month.");
+  renderList("paymentsRecurring", state.payments.filter(p => p.frequency !== "One-time").sort(sortPayments), renderPaymentItem, "No recurring payments yet.");
+
+  let payments = [...state.payments];
+  if (paymentFilter === "open") payments = payments.filter(p => p.status !== "Paid");
+  if (paymentFilter === "paid") payments = payments.filter(p => p.status === "Paid");
+  payments.sort(sortPayments);
+  renderList("paymentList", payments, renderPaymentItem, "No payments in this view.");
+}
+
+function renderPlanning() {
+  renderList("inboxList", state.inbox, renderInboxItem, "Inbox is clear.");
+  renderList("prepList", [...state.prepItems].sort(sortPrep), renderPrepItem, "No prep items yet.");
+  renderList("decisionList", [...state.decisions].sort(sortDecisions), renderDecisionItem, "No decisions yet.");
+  renderList("adminList", [...state.adminItems].sort(sortAdmin), renderAdminItem, "No school/admin items yet.");
+}
+
 function renderShopping() {
   const items = [...state.shopping].sort((a, b) => Number(a.done) - Number(b.done) || a.name.localeCompare(b.name));
   renderList("shoppingList", items, renderShoppingItem, "No shopping items yet.");
@@ -221,16 +411,26 @@ function renderKids() {
   state.settings.children.forEach(child => {
     const childEvents = state.events.filter(e => e.person === child).sort(sortEvents).slice(0, 5);
     const childTasks = state.tasks.filter(t => t.owner === child && !t.done).sort(sortTasks).slice(0, 5);
+    const childPayments = state.payments.filter(p => p.owner === child && p.status !== "Paid").sort(sortPayments).slice(0, 3);
+    const childAdmin = state.adminItems.filter(a => a.owner === child && a.status !== "Done").sort(sortAdmin).slice(0, 3);
+    const childSchool = state.schoolItems.filter(s => s.child === child && s.status !== "Done").sort(sortSchool).slice(0, 4);
+
     const card = document.createElement("article");
     card.className = "card";
     card.innerHTML = `
       <h2>${escapeHtml(child)}</h2>
-      <p class="muted">Upcoming activities and open tasks.</p>
+      <p class="muted">Activities, tasks, payments, and admin items for this child.</p>
       <div class="list">
         <h3>Activities</h3>
         ${childEvents.length ? childEvents.map(e => smallLine(e.title, `${formatDate(e.date)} ${formatTime(e.time)}${e.location ? " · " + e.location : ""}`)).join("") : `<div class="empty">No activities yet.</div>`}
         <h3>Tasks</h3>
         ${childTasks.length ? childTasks.map(t => smallLine(t.title, `${t.due ? formatDate(t.due) : "No due date"} · ${t.category}`)).join("") : `<div class="empty">No open tasks.</div>`}
+        <h3>Homework & exams</h3>
+        ${childSchool.length ? childSchool.map(s => smallLine(`${s.type}: ${s.title}`, `${s.due ? formatDate(s.due) : "No due date"} · ${s.subject || "No subject"} · ${s.priority}`)).join("") : `<div class="empty">No homework or exams.</div>`}
+        <h3>Payments</h3>
+        ${childPayments.length ? childPayments.map(p => smallLine(`${p.name} — ${money(p.amount)}`, `${p.due ? formatDate(p.due) : "No due date"} · ${p.category}`)).join("") : `<div class="empty">No open payments.</div>`}
+        <h3>School/Admin</h3>
+        ${childAdmin.length ? childAdmin.map(a => smallLine(a.title, `${a.due ? formatDate(a.due) : "No due date"} · ${a.category}`)).join("") : `<div class="empty">No admin items.</div>`}
       </div>
     `;
     grid.appendChild(card);
@@ -254,7 +454,7 @@ function renderRoutine(containerId, routineName) {
   container.innerHTML = items.map(item => {
     const done = item.doneDate === today;
     return `
-      <div class="item routine-row">
+      <div class="item">
         <div class="item-main">
           <div class="item-title ${done ? "done-text" : ""}">${escapeHtml(item.text)}</div>
           <div class="item-meta">${done ? "Done today" : "Not done today"}</div>
@@ -270,20 +470,12 @@ function renderRoutine(containerId, routineName) {
 
 function renderList(containerId, items, renderer, emptyText) {
   const container = document.getElementById(containerId);
+  if (!container) return;
   if (!items.length) {
     container.innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`;
     return;
   }
   container.innerHTML = items.map(renderer).join("");
-}
-
-function renderSimpleList(containerId, items, emptyText) {
-  const container = document.getElementById(containerId);
-  if (!items.length) {
-    container.innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`;
-    return;
-  }
-  container.innerHTML = items.map(item => smallLine(item.title, item.meta)).join("");
 }
 
 function smallLine(title, meta) {
@@ -297,15 +489,22 @@ function smallLine(title, meta) {
   `;
 }
 
+function dueBadgeClass(iso, statusDone) {
+  if (!iso || statusDone) return "";
+  const diff = daysBetween(todayIso(), iso);
+  if (diff < 0) return "overdue";
+  if (diff <= 1) return "due";
+  return "";
+}
+
 function renderTaskItem(task) {
-  const dueClass = task.due && task.due <= todayIso() && !task.done ? "due" : "";
   return `
     <div class="item">
       <div class="item-main">
         <div class="item-title ${task.done ? "done-text" : ""}">${escapeHtml(task.title)}</div>
         <div class="item-meta">
           <span class="badge">${escapeHtml(task.owner || "Unassigned")}</span>
-          <span class="badge ${dueClass}">${task.due ? formatDate(task.due) : "No due date"}</span>
+          <span class="badge ${dueBadgeClass(task.due, task.done)}">${task.due ? formatDate(task.due) : "No due date"}</span>
           <span class="badge">${escapeHtml(task.category)}</span>
           <span class="badge ${task.priority === "High" ? "high" : ""}">${escapeHtml(task.priority)}</span>
           ${task.done ? `<span class="badge done">Done</span>` : ""}
@@ -339,6 +538,56 @@ function renderEventItem(event) {
   `;
 }
 
+
+function renderSchoolItem(item) {
+  const done = item.status === "Done";
+  const isExam = ["Exam", "Test", "Quiz"].includes(item.type);
+  return `
+    <div class="item">
+      <div class="item-main">
+        <div class="item-title ${done ? "done-text" : ""}">${escapeHtml(item.title)}</div>
+        <div class="item-meta">
+          <span class="badge ${isExam ? "exam" : "school"}">${escapeHtml(item.type || "School")}</span>
+          <span class="badge">${escapeHtml(item.child || "Child")}</span>
+          <span class="badge">${escapeHtml(item.subject || "No subject")}</span>
+          <span class="badge ${dueBadgeClass(item.due, done)}">${item.due ? formatDate(item.due) : "No due date"}</span>
+          <span class="badge ${item.priority === "High" ? "high" : ""}">${escapeHtml(item.priority || "Normal")}</span>
+          ${item.notes ? `<span class="badge">${escapeHtml(item.notes)}</span>` : ""}
+          ${done ? `<span class="badge done">Done</span>` : ""}
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="icon-btn" data-action="toggleSchool" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="schoolToPrep" data-id="${item.id}">Prep</button>
+        <button class="icon-btn" data-action="deleteSchool" data-id="${item.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderPaymentItem(payment) {
+  const paid = payment.status === "Paid";
+  return `
+    <div class="item">
+      <div class="item-main">
+        <div class="item-title ${paid ? "done-text" : ""}">${escapeHtml(payment.name)} — ${money(payment.amount)}</div>
+        <div class="item-meta">
+          <span class="badge money">${escapeHtml(payment.category)}</span>
+          <span class="badge ${dueBadgeClass(payment.due, paid)}">${payment.due ? formatDate(payment.due) : "No due date"}</span>
+          <span class="badge">${escapeHtml(payment.owner || "Both")}</span>
+          <span class="badge">${escapeHtml(payment.frequency)}</span>
+          <span class="badge">${escapeHtml(payment.method)}</span>
+          ${paid ? `<span class="badge paid">Paid ${payment.paidDate ? formatDate(payment.paidDate) : ""}</span>` : ""}
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="icon-btn" data-action="togglePayment" data-id="${payment.id}">${paid ? "Reopen" : "Paid"}</button>
+        <button class="icon-btn" data-action="deletePayment" data-id="${payment.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderShoppingItem(item) {
   return `
     <div class="item">
@@ -357,6 +606,88 @@ function renderShoppingItem(item) {
   `;
 }
 
+function renderInboxItem(item) {
+  return `
+    <div class="item">
+      <div class="item-main">
+        <div class="item-title">${escapeHtml(item.text)}</div>
+        <div class="item-meta">
+          <span class="badge">${escapeHtml(item.type || "Unsorted")}</span>
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="icon-btn" data-action="inboxToTask" data-id="${item.id}">Task</button>
+        <button class="icon-btn" data-action="inboxToDecision" data-id="${item.id}">Decision</button>
+        <button class="icon-btn" data-action="inboxToPrep" data-id="${item.id}">Prep</button>
+        <button class="icon-btn" data-action="deleteInbox" data-id="${item.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderPrepItem(item) {
+  return `
+    <div class="item">
+      <div class="item-main">
+        <div class="item-title ${item.done ? "done-text" : ""}">${escapeHtml(item.text)}</div>
+        <div class="item-meta">
+          <span class="badge">${escapeHtml(item.owner || "Both")}</span>
+          <span class="badge ${dueBadgeClass(item.date, item.done)}">${item.date ? formatDate(item.date) : "No date"}</span>
+          ${item.done ? `<span class="badge done">Done</span>` : ""}
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="icon-btn" data-action="togglePrep" data-id="${item.id}">${item.done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="deletePrep" data-id="${item.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDecisionItem(item) {
+  const done = item.status === "Done";
+  return `
+    <div class="item">
+      <div class="item-main">
+        <div class="item-title ${done ? "done-text" : ""}">${escapeHtml(item.title)}</div>
+        <div class="item-meta">
+          <span class="badge decision">Decision</span>
+          <span class="badge">${escapeHtml(item.owner || "Both")}</span>
+          <span class="badge ${dueBadgeClass(item.due, done)}">${item.due ? formatDate(item.due) : "No due date"}</span>
+          ${item.options ? `<span class="badge">${escapeHtml(item.options)}</span>` : ""}
+          ${done ? `<span class="badge done">Done</span>` : ""}
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="icon-btn" data-action="toggleDecision" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="deleteDecision" data-id="${item.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAdminItem(item) {
+  const done = item.status === "Done";
+  return `
+    <div class="item">
+      <div class="item-main">
+        <div class="item-title ${done ? "done-text" : ""}">${escapeHtml(item.title)}</div>
+        <div class="item-meta">
+          <span class="badge">${escapeHtml(item.category)}</span>
+          <span class="badge">${escapeHtml(item.owner || "Both")}</span>
+          <span class="badge ${dueBadgeClass(item.due, done)}">${item.due ? formatDate(item.due) : "No due date"}</span>
+          ${item.notes ? `<span class="badge">${escapeHtml(item.notes)}</span>` : ""}
+          ${done ? `<span class="badge done">Done</span>` : ""}
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="icon-btn" data-action="toggleAdmin" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="deleteAdmin" data-id="${item.id}">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
 function sortTasks(a, b) {
   return Number(a.done) - Number(b.done)
     || (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99")
@@ -366,6 +697,43 @@ function sortTasks(a, b) {
 
 function sortEvents(a, b) {
   return (a.date || "").localeCompare(b.date || "") || (a.time || "").localeCompare(b.time || "") || a.title.localeCompare(b.title);
+}
+
+
+function sortSchool(a, b) {
+  return Number(a.status === "Done") - Number(b.status === "Done")
+    || (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99")
+    || (b.priority === "High") - (a.priority === "High")
+    || (a.child || "").localeCompare(b.child || "")
+    || a.title.localeCompare(b.title);
+}
+
+function sortPayments(a, b) {
+  return Number(a.status === "Paid") - Number(b.status === "Paid")
+    || (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99")
+    || a.name.localeCompare(b.name);
+}
+
+function sortPrep(a, b) {
+  return Number(a.done) - Number(b.done)
+    || (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99")
+    || a.text.localeCompare(b.text);
+}
+
+function sortDecisions(a, b) {
+  return Number(a.status === "Done") - Number(b.status === "Done")
+    || (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99")
+    || a.title.localeCompare(b.title);
+}
+
+function sortAdmin(a, b) {
+  return Number(a.status === "Done") - Number(b.status === "Done")
+    || (a.due || "9999-99-99").localeCompare(b.due || "9999-99-99")
+    || a.title.localeCompare(b.title);
+}
+
+function sumPayments(payments) {
+  return payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 }
 
 document.addEventListener("click", event => {
@@ -379,12 +747,21 @@ document.addEventListener("click", event => {
     return;
   }
 
-  const filter = event.target.closest("[data-task-filter]");
-  if (filter) {
-    taskFilter = filter.dataset.taskFilter;
+  const taskFilterButton = event.target.closest("[data-task-filter]");
+  if (taskFilterButton) {
+    taskFilter = taskFilterButton.dataset.taskFilter;
     document.querySelectorAll("[data-task-filter]").forEach(f => f.classList.remove("active"));
-    filter.classList.add("active");
+    taskFilterButton.classList.add("active");
     renderTasks();
+    return;
+  }
+
+  const paymentFilterButton = event.target.closest("[data-payment-filter]");
+  if (paymentFilterButton) {
+    paymentFilter = paymentFilterButton.dataset.paymentFilter;
+    document.querySelectorAll("[data-payment-filter]").forEach(f => f.classList.remove("active"));
+    paymentFilterButton.classList.add("active");
+    renderPayments();
     return;
   }
 
@@ -395,32 +772,86 @@ document.addEventListener("click", event => {
 
 function handleAction(dataset) {
   const { action, id, routine } = dataset;
+
   if (action === "toggleTask") {
     const task = state.tasks.find(t => t.id === id);
     if (task) task.done = !task.done;
   }
   if (action === "deleteTask") state.tasks = state.tasks.filter(t => t.id !== id);
+
   if (action === "deleteEvent") state.events = state.events.filter(e => e.id !== id);
-  if (action === "toggleShopping") {
-    const item = state.shopping.find(i => i.id === id);
-    if (item) item.done = !item.done;
-  }
-  if (action === "deleteShopping") state.shopping = state.shopping.filter(i => i.id !== id);
   if (action === "taskFromEvent") {
     const event = state.events.find(e => e.id === id);
     if (event) {
-      state.tasks.push({
+      state.prepItems.push({
         id: uid(),
-        title: `Prepare for ${event.title}`,
+        text: `Prepare for ${event.title}`,
         owner: "Both",
-        due: event.date ? addDays(new Date(event.date), -1) : "",
-        category: "Kids Activity",
-        priority: "Normal",
+        date: event.date ? addDays(event.date, -1) : addDays(todayIso(), 1),
         done: false,
         createdAt: Date.now()
       });
     }
   }
+
+  if (action === "togglePayment") {
+    const payment = state.payments.find(p => p.id === id);
+    if (payment) {
+      const isPaid = payment.status === "Paid";
+      payment.status = isPaid ? "Upcoming" : "Paid";
+      payment.paidDate = isPaid ? "" : todayIso();
+    }
+  }
+  if (action === "deletePayment") state.payments = state.payments.filter(p => p.id !== id);
+
+  if (action === "toggleSchool") {
+    const item = state.schoolItems.find(s => s.id === id);
+    if (item) item.status = item.status === "Done" ? "Open" : "Done";
+  }
+  if (action === "deleteSchool") state.schoolItems = state.schoolItems.filter(s => s.id !== id);
+  if (action === "schoolToPrep") {
+    const item = state.schoolItems.find(s => s.id === id);
+    if (item) {
+      state.prepItems.push({
+        id: uid(),
+        text: `Prepare for ${item.child || "child"}: ${item.title}`,
+        owner: "Both",
+        date: item.due ? addDays(item.due, -1) : addDays(todayIso(), 1),
+        done: false,
+        createdAt: Date.now()
+      });
+    }
+  }
+
+  if (action === "toggleShopping") {
+    const item = state.shopping.find(i => i.id === id);
+    if (item) item.done = !item.done;
+  }
+  if (action === "deleteShopping") state.shopping = state.shopping.filter(i => i.id !== id);
+
+  if (action === "deleteInbox") state.inbox = state.inbox.filter(i => i.id !== id);
+  if (action === "inboxToTask") convertInbox(id, "task");
+  if (action === "inboxToDecision") convertInbox(id, "decision");
+  if (action === "inboxToPrep") convertInbox(id, "prep");
+
+  if (action === "togglePrep") {
+    const item = state.prepItems.find(p => p.id === id);
+    if (item) item.done = !item.done;
+  }
+  if (action === "deletePrep") state.prepItems = state.prepItems.filter(p => p.id !== id);
+
+  if (action === "toggleDecision") {
+    const item = state.decisions.find(d => d.id === id);
+    if (item) item.status = item.status === "Done" ? "Open" : "Done";
+  }
+  if (action === "deleteDecision") state.decisions = state.decisions.filter(d => d.id !== id);
+
+  if (action === "toggleAdmin") {
+    const item = state.adminItems.find(a => a.id === id);
+    if (item) item.status = item.status === "Done" ? "Open" : "Done";
+  }
+  if (action === "deleteAdmin") state.adminItems = state.adminItems.filter(a => a.id !== id);
+
   if (action === "toggleRoutine") {
     const item = state.routines[routine]?.find(r => r.id === id);
     if (item) item.doneDate = item.doneDate === todayIso() ? "" : todayIso();
@@ -428,8 +859,26 @@ function handleAction(dataset) {
   if (action === "deleteRoutine") {
     state.routines[routine] = state.routines[routine].filter(r => r.id !== id);
   }
+
   saveState();
   render();
+}
+
+function convertInbox(id, target) {
+  const item = state.inbox.find(i => i.id === id);
+  if (!item) return;
+
+  if (target === "task") {
+    state.tasks.push({ id: uid(), title: item.text, owner: "Both", due: "", category: item.type || "Other", priority: "Normal", done: false, createdAt: Date.now() });
+  }
+  if (target === "decision") {
+    state.decisions.push({ id: uid(), title: item.text, owner: "Both", due: "", options: "", status: "Open", createdAt: Date.now() });
+  }
+  if (target === "prep") {
+    state.prepItems.push({ id: uid(), text: item.text, owner: "Both", date: addDays(todayIso(), 1), done: false, createdAt: Date.now() });
+  }
+
+  state.inbox = state.inbox.filter(i => i.id !== id);
 }
 
 document.getElementById("quickForm").addEventListener("submit", event => {
@@ -437,38 +886,59 @@ document.getElementById("quickForm").addEventListener("submit", event => {
   const text = document.getElementById("quickText").value.trim();
   const requested = document.getElementById("quickType").value;
   if (!text) return;
+
   const type = inferQuickType(text, requested);
+  const date = extractDate(text);
 
   if (type === "shopping") {
     const cleaned = text.replace(/^(buy|shopping)\s*:?/i, "").trim();
     cleaned.split(",").map(x => x.trim()).filter(Boolean).forEach(name => {
       state.shopping.push({ id: uid(), name, store: "Grocery", done: false, createdAt: Date.now() });
     });
-  } else if (type === "event") {
-    state.events.push({
+  } else if (type === "schoolwork") {
+    const lower = text.toLowerCase();
+    const child = state.settings.children.find(name => lower.includes(name.toLowerCase())) || "All family";
+    const itemType = lower.includes("exam") ? "Exam" : lower.includes("test") ? "Test" : lower.includes("quiz") ? "Quiz" : lower.includes("project") ? "Project" : lower.includes("reading") ? "Reading" : "Homework";
+    state.schoolItems.push({
       id: uid(),
       title: text,
-      person: "All family",
-      date: extractDate(text) || todayIso(),
-      time: extractTime(text),
-      location: "",
+      child,
+      type: itemType,
+      subject: "",
+      due: date || todayIso(),
+      priority: ["Exam", "Test", "Quiz"].includes(itemType) ? "High" : "Normal",
+      status: "Open",
       notes: "Added from quick capture",
       createdAt: Date.now()
     });
-  } else if (type === "note") {
-    state.notes.push({ id: uid(), text, createdAt: Date.now() });
-    state.tasks.push({ id: uid(), title: `Review note: ${text}`, owner: "Both", due: "", category: "Other", priority: "Low", done: false, createdAt: Date.now() });
-  } else {
-    state.tasks.push({
+  } else if (type === "payment") {
+    const paid = text.toLowerCase().startsWith("paid ");
+    state.payments.push({
       id: uid(),
-      title: text,
-      owner: "Both",
-      due: extractDate(text),
+      name: text.replace(/^(pay|paid)\s+/i, "").replace(/\$?\s?\d+(?:\.\d{1,2})?/, "").trim() || text,
+      amount: extractAmount(text),
+      due: paid ? date || todayIso() : date || todayIso(),
       category: "Other",
-      priority: "Normal",
-      done: false,
+      owner: "Both",
+      frequency: "One-time",
+      method: "Credit card",
+      status: paid ? "Paid" : "Upcoming",
+      paidDate: paid ? todayIso() : "",
+      notes: "Added from quick capture",
       createdAt: Date.now()
     });
+  } else if (type === "prep") {
+    state.prepItems.push({ id: uid(), text, owner: "Both", date: date || addDays(todayIso(), 1), done: false, createdAt: Date.now() });
+  } else if (type === "decision") {
+    state.decisions.push({ id: uid(), title: text.replace(/^decision\s*:?/i, "").trim(), owner: "Both", due: date, options: "", status: "Open", createdAt: Date.now() });
+  } else if (type === "admin") {
+    state.adminItems.push({ id: uid(), title: text, category: "Other", owner: "Both", due: date, notes: "Added from quick capture", status: "Open", createdAt: Date.now() });
+  } else if (type === "event") {
+    state.events.push({ id: uid(), title: text, person: "All family", date: date || todayIso(), time: extractTime(text), location: "", notes: "Added from quick capture", createdAt: Date.now() });
+  } else if (type === "inbox") {
+    state.inbox.push({ id: uid(), text, type: "Unsorted", createdAt: Date.now() });
+  } else {
+    state.tasks.push({ id: uid(), title: text, owner: "Both", due: date, category: "Other", priority: "Normal", done: false, createdAt: Date.now() });
   }
 
   document.getElementById("quickText").value = "";
@@ -510,6 +980,48 @@ document.getElementById("eventForm").addEventListener("submit", event => {
   render();
 });
 
+
+document.getElementById("schoolForm").addEventListener("submit", event => {
+  event.preventDefault();
+  state.schoolItems.push({
+    id: uid(),
+    title: document.getElementById("schoolTitle").value.trim(),
+    child: document.getElementById("schoolChild").value,
+    type: document.getElementById("schoolType").value,
+    subject: document.getElementById("schoolSubject").value.trim(),
+    due: document.getElementById("schoolDue").value,
+    priority: document.getElementById("schoolPriority").value,
+    status: "Open",
+    notes: document.getElementById("schoolNotes").value.trim(),
+    createdAt: Date.now()
+  });
+  event.target.reset();
+  saveState();
+  render();
+});
+
+document.getElementById("paymentForm").addEventListener("submit", event => {
+  event.preventDefault();
+  const status = document.getElementById("paymentStatus").value;
+  state.payments.push({
+    id: uid(),
+    name: document.getElementById("paymentName").value.trim(),
+    amount: Number(document.getElementById("paymentAmount").value || 0),
+    due: document.getElementById("paymentDue").value,
+    category: document.getElementById("paymentCategory").value,
+    owner: document.getElementById("paymentOwner").value,
+    frequency: document.getElementById("paymentFrequency").value,
+    method: document.getElementById("paymentMethod").value,
+    status,
+    paidDate: status === "Paid" ? todayIso() : "",
+    notes: "",
+    createdAt: Date.now()
+  });
+  event.target.reset();
+  saveState();
+  render();
+});
+
 document.getElementById("shoppingForm").addEventListener("submit", event => {
   event.preventDefault();
   state.shopping.push({
@@ -517,6 +1029,67 @@ document.getElementById("shoppingForm").addEventListener("submit", event => {
     name: document.getElementById("shoppingName").value.trim(),
     store: document.getElementById("shoppingStore").value,
     done: false,
+    createdAt: Date.now()
+  });
+  event.target.reset();
+  saveState();
+  render();
+});
+
+document.getElementById("inboxForm").addEventListener("submit", event => {
+  event.preventDefault();
+  state.inbox.push({
+    id: uid(),
+    text: document.getElementById("inboxText").value.trim(),
+    type: document.getElementById("inboxType").value,
+    createdAt: Date.now()
+  });
+  event.target.reset();
+  saveState();
+  render();
+});
+
+document.getElementById("prepForm").addEventListener("submit", event => {
+  event.preventDefault();
+  state.prepItems.push({
+    id: uid(),
+    text: document.getElementById("prepText").value.trim(),
+    owner: document.getElementById("prepOwner").value,
+    date: document.getElementById("prepDate").value || addDays(todayIso(), 1),
+    done: false,
+    createdAt: Date.now()
+  });
+  document.getElementById("prepText").value = "";
+  saveState();
+  render();
+});
+
+document.getElementById("decisionForm").addEventListener("submit", event => {
+  event.preventDefault();
+  state.decisions.push({
+    id: uid(),
+    title: document.getElementById("decisionTitle").value.trim(),
+    owner: document.getElementById("decisionOwner").value,
+    due: document.getElementById("decisionDue").value,
+    options: document.getElementById("decisionOptions").value.trim(),
+    status: "Open",
+    createdAt: Date.now()
+  });
+  event.target.reset();
+  saveState();
+  render();
+});
+
+document.getElementById("adminForm").addEventListener("submit", event => {
+  event.preventDefault();
+  state.adminItems.push({
+    id: uid(),
+    title: document.getElementById("adminTitle").value.trim(),
+    category: document.getElementById("adminCategory").value,
+    owner: document.getElementById("adminOwner").value,
+    due: document.getElementById("adminDue").value,
+    notes: document.getElementById("adminNotes").value.trim(),
+    status: "Open",
     createdAt: Date.now()
   });
   event.target.reset();
@@ -543,10 +1116,7 @@ document.getElementById("settingsForm").addEventListener("submit", event => {
     document.getElementById("parent1").value.trim() || "Parent 1",
     document.getElementById("parent2").value.trim() || "Parent 2"
   ];
-  state.settings.children = document.getElementById("childrenNames").value
-    .split(",")
-    .map(x => x.trim())
-    .filter(Boolean);
+  state.settings.children = document.getElementById("childrenNames").value.split(",").map(x => x.trim()).filter(Boolean);
   saveState();
   render();
 });
@@ -557,7 +1127,7 @@ document.getElementById("exportBtn").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `family-command-center-backup-${todayIso()}.json`;
+  a.download = `family-command-center-v2-backup-${todayIso()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 });
@@ -568,7 +1138,7 @@ document.getElementById("importFile").addEventListener("change", event => {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      state = JSON.parse(reader.result);
+      state = normalizeState(JSON.parse(reader.result));
       saveState();
       render();
       alert("Backup imported.");
@@ -581,7 +1151,7 @@ document.getElementById("importFile").addEventListener("change", event => {
 
 document.getElementById("resetBtn").addEventListener("click", () => {
   if (!confirm("Reset all data and return to demo data?")) return;
-  state = structuredClone(demoData);
+  state = demoData();
   saveState();
   render();
 });

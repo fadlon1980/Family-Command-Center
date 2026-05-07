@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center</title>
+  <title>Family Command Center V3</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -24,17 +24,22 @@
       <div class="quick-header">
         <div>
           <h2>Quick capture</h2>
-          <p class="muted">Add a task, event, shopping item, or note in a few seconds.</p>
+          <p class="muted">Capture tasks, payments, prep, school forms, decisions, shopping, and events.</p>
         </div>
       </div>
       <form id="quickForm" class="quick-form">
-        <input id="quickText" type="text" placeholder="Example: Maya soccer tomorrow 5pm, buy milk, renew passport Friday" autocomplete="off" />
+        <input id="quickText" type="text" placeholder="Example: Pay soccer fee $120 by Friday, decision choose summer camp, buy milk" autocomplete="off" />
         <select id="quickType" aria-label="Item type">
           <option value="auto">Auto</option>
           <option value="task">Task</option>
           <option value="event">Event</option>
+          <option value="payment">Payment</option>
+          <option value="prep">Tomorrow prep</option>
+          <option value="decision">Decision</option>
+          <option value="admin">School/Admin</option>
+          <option value="schoolwork">Homework / Exam</option>
           <option value="shopping">Shopping</option>
-          <option value="note">Note</option>
+          <option value="inbox">Inbox</option>
         </select>
         <button type="submit">Add</button>
       </form>
@@ -44,6 +49,9 @@
       <button class="tab active" data-screen="today">Today</button>
       <button class="tab" data-screen="tasks">Tasks</button>
       <button class="tab" data-screen="calendar">Calendar</button>
+      <button class="tab" data-screen="learning">Homework</button>
+      <button class="tab" data-screen="money">Money</button>
+      <button class="tab" data-screen="planning">Planning</button>
       <button class="tab" data-screen="shopping">Shopping</button>
       <button class="tab" data-screen="kids">Kids</button>
       <button class="tab" data-screen="routines">Routines</button>
@@ -52,21 +60,96 @@
 
     <main>
       <section id="today" class="screen active">
+        <div class="summary-strip" id="summaryStrip"></div>
+
         <div class="grid">
           <article class="card">
-            <h2>Today</h2>
+            <div class="section-title">
+              <div>
+                <h2>Today</h2>
+                <p class="muted">Events and activities planned for today.</p>
+              </div>
+            </div>
             <div id="todayEvents" class="list"></div>
           </article>
+
+          <article class="card attention-card">
+            <div class="section-title">
+              <div>
+                <h2>Payments attention</h2>
+                <p class="muted">Overdue, due today, and due in the next 7 days.</p>
+              </div>
+            </div>
+            <div id="todayPayments" class="list"></div>
+          </article>
+
           <article class="card">
-            <h2>Tasks needing attention</h2>
+            <div class="section-title">
+              <div>
+                <h2>Tasks needing attention</h2>
+                <p class="muted">Overdue and due today.</p>
+              </div>
+            </div>
             <div id="todayTasks" class="list"></div>
           </article>
+
           <article class="card">
-            <h2>Tomorrow prep</h2>
-            <div id="tomorrowPrep" class="list"></div>
+            <div class="section-title">
+              <div>
+                <h2>Tomorrow prep</h2>
+                <p class="muted">Items to prepare before tomorrow.</p>
+              </div>
+            </div>
+            <div id="tomorrowPrepDashboard" class="list"></div>
           </article>
+
+          <article class="card schoolwork-card">
+            <div class="section-title">
+              <div>
+                <h2>Homework & exams</h2>
+                <p class="muted">Upcoming homework, projects, quizzes, tests, and exam dates.</p>
+              </div>
+            </div>
+            <div id="todaySchoolwork" class="list"></div>
+          </article>
+
           <article class="card">
-            <h2>Shopping open items</h2>
+            <div class="section-title">
+              <div>
+                <h2>Needs decision</h2>
+                <p class="muted">Family decisions waiting for alignment.</p>
+              </div>
+            </div>
+            <div id="todayDecisions" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>School & admin</h2>
+                <p class="muted">Forms, payments, documents, and deadlines.</p>
+              </div>
+            </div>
+            <div id="todayAdmin" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Inbox / brain dump</h2>
+                <p class="muted">Unsorted items that still need a home.</p>
+              </div>
+            </div>
+            <div id="todayInbox" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Shopping open items</h2>
+                <p class="muted">Top open items from the shared list.</p>
+              </div>
+            </div>
             <div id="todayShopping" class="list"></div>
           </article>
         </div>
@@ -77,7 +160,7 @@
           <div class="section-title">
             <div>
               <h2>Family tasks</h2>
-              <p class="muted">Track ownership, due dates, and status.</p>
+              <p class="muted">Track ownership, due dates, priority, and status.</p>
             </div>
           </div>
           <form id="taskForm" class="form-grid">
@@ -92,6 +175,8 @@
               <option>Finance</option>
               <option>Shopping</option>
               <option>Kids Activity</option>
+              <option>Car</option>
+              <option>Travel</option>
               <option>Other</option>
             </select>
             <select id="taskPriority">
@@ -130,12 +215,229 @@
         </article>
       </section>
 
+
+      <section id="learning" class="screen">
+        <div class="grid">
+          <article class="card wide learning-hero">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">School focus</p>
+                <h2>Homework, exams & due dates</h2>
+                <p class="muted">Track each child’s homework, projects, quizzes, tests, and exams in one clear place.</p>
+              </div>
+            </div>
+
+            <form id="schoolForm" class="school-form">
+              <input id="schoolTitle" placeholder="Example: Math homework, Science exam, History project" required />
+              <select id="schoolChild"></select>
+              <select id="schoolType">
+                <option>Homework</option>
+                <option>Exam</option>
+                <option>Test</option>
+                <option>Quiz</option>
+                <option>Project</option>
+                <option>Reading</option>
+                <option>Other</option>
+              </select>
+              <input id="schoolSubject" placeholder="Subject" />
+              <input id="schoolDue" type="date" />
+              <select id="schoolPriority">
+                <option>Normal</option>
+                <option>High</option>
+                <option>Low</option>
+              </select>
+              <input id="schoolNotes" placeholder="Notes, materials, link, chapter, teacher, etc." />
+              <button type="submit">Add school item</button>
+            </form>
+          </article>
+
+          <article class="card">
+            <h2>Due next 7 days</h2>
+            <p class="muted">Items that need attention soon.</p>
+            <div id="schoolDueWeek" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Due this month</h2>
+            <p class="muted">A wider view of upcoming school load.</p>
+            <div id="schoolDueMonth" class="list"></div>
+          </article>
+
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>All homework & exams</h2>
+                <p class="muted">Use this as the family schoolwork tracker.</p>
+              </div>
+            </div>
+            <div id="schoolItemList" class="list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="money" class="screen">
+        <div class="grid">
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>Payments & family expenses</h2>
+                <p class="muted">Monitor what is due, what was paid, and spending by week, month, and year.</p>
+              </div>
+            </div>
+            <div id="moneySummary" class="money-summary"></div>
+
+            <form id="paymentForm" class="payment-form">
+              <input id="paymentName" placeholder="Payment / expense name" required />
+              <input id="paymentAmount" type="number" step="0.01" min="0" placeholder="Amount" required />
+              <input id="paymentDue" type="date" />
+              <select id="paymentCategory">
+                <option>Groceries</option>
+                <option>Kids Activities</option>
+                <option>School</option>
+                <option>Health</option>
+                <option>Home</option>
+                <option>Car</option>
+                <option>Subscriptions</option>
+                <option>Utilities</option>
+                <option>Travel</option>
+                <option>Entertainment</option>
+                <option>Other</option>
+              </select>
+              <select id="paymentOwner"></select>
+              <select id="paymentFrequency">
+                <option>One-time</option>
+                <option>Weekly</option>
+                <option>Monthly</option>
+                <option>Yearly</option>
+              </select>
+              <select id="paymentMethod">
+                <option>Credit card</option>
+                <option>Bank</option>
+                <option>Cash</option>
+                <option>Check</option>
+                <option>Other</option>
+              </select>
+              <select id="paymentStatus">
+                <option>Upcoming</option>
+                <option>Paid</option>
+              </select>
+              <button type="submit">Add payment</button>
+            </form>
+          </article>
+
+          <article class="card">
+            <h2>Due this week</h2>
+            <div id="paymentsDueWeek" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Due this month</h2>
+            <div id="paymentsDueMonth" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Paid this month</h2>
+            <div id="paymentsPaidMonth" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Recurring payments</h2>
+            <div id="paymentsRecurring" class="list"></div>
+          </article>
+
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>All payments & expenses</h2>
+                <p class="muted">Use this as a simple family finance tracker.</p>
+              </div>
+            </div>
+            <div class="filters">
+              <button class="pill active" data-payment-filter="open">Open</button>
+              <button class="pill" data-payment-filter="all">All</button>
+              <button class="pill" data-payment-filter="paid">Paid</button>
+            </div>
+            <div id="paymentList" class="list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="planning" class="screen">
+        <div class="grid">
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>Inbox / brain dump</h2>
+                <p class="muted">Capture messy thoughts first, organize them later.</p>
+              </div>
+            </div>
+            <form id="inboxForm" class="inline-form">
+              <input id="inboxText" placeholder="Example: Ask teacher about field trip" required />
+              <select id="inboxType">
+                <option>Unsorted</option>
+                <option>School</option>
+                <option>Home</option>
+                <option>Kids Activity</option>
+                <option>Money</option>
+                <option>Health</option>
+                <option>Other</option>
+              </select>
+              <button type="submit">Add</button>
+            </form>
+            <div id="inboxList" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Tomorrow prep</h2>
+            <form id="prepForm" class="stack-form">
+              <input id="prepText" placeholder="Example: Pack soccer uniform" required />
+              <select id="prepOwner"></select>
+              <input id="prepDate" type="date" />
+              <button type="submit">Add prep item</button>
+            </form>
+            <div id="prepList" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Needs decision</h2>
+            <form id="decisionForm" class="stack-form">
+              <input id="decisionTitle" placeholder="Example: Choose summer camp" required />
+              <select id="decisionOwner"></select>
+              <input id="decisionDue" type="date" />
+              <input id="decisionOptions" placeholder="Options, optional" />
+              <button type="submit">Add decision</button>
+            </form>
+            <div id="decisionList" class="list"></div>
+          </article>
+
+          <article class="card wide">
+            <h2>School & admin tracker</h2>
+            <form id="adminForm" class="admin-form">
+              <input id="adminTitle" placeholder="Form, payment, document, or admin task" required />
+              <select id="adminCategory">
+                <option>School form</option>
+                <option>Payment</option>
+                <option>Medical</option>
+                <option>Document</option>
+                <option>Activity registration</option>
+                <option>Other</option>
+              </select>
+              <select id="adminOwner"></select>
+              <input id="adminDue" type="date" />
+              <input id="adminNotes" placeholder="Notes" />
+              <button type="submit">Add admin item</button>
+            </form>
+            <div id="adminList" class="list"></div>
+          </article>
+        </div>
+      </section>
+
       <section id="shopping" class="screen">
         <article class="card">
           <div class="section-title">
             <div>
               <h2>Shopping list</h2>
-              <p class="muted">For groceries, pharmacy, school supplies, and home items.</p>
+              <p class="muted">Groceries, pharmacy, school supplies, and home items.</p>
             </div>
           </div>
           <form id="shoppingForm" class="inline-form">
@@ -146,6 +448,7 @@
               <option>Pharmacy</option>
               <option>Target</option>
               <option>School</option>
+              <option>Home</option>
               <option>Other</option>
             </select>
             <button type="submit">Add</button>
@@ -214,15 +517,11 @@
             </label>
             <button id="resetBtn" class="danger">Reset demo data</button>
           </div>
-          <pre id="exportBox" class="export-box hidden"></pre>
+          <p class="muted small-note">V2 still stores data locally in this browser. The next step is cloud sync so both parents see the same data.</p>
         </article>
       </section>
     </main>
   </div>
-
-  <template id="emptyTemplate">
-    <div class="empty">Nothing here yet.</div>
-  </template>
 
   <script src="app.js"></script>
 </body>
