@@ -1,48 +1,26 @@
-# Firebase + Google Calendar setup for Family Command Center V4.5
+# Firebase setup for Family Command Center V4.6
 
-V4.5 adds Google Calendar read integration.
+V4.6 adds Parent/Kid roles and kid-friendly view.
 
-## Firebase setup
+## Required Firebase setup
 
-Same as V4.4:
+Same as V4.5:
 
 1. Authentication → Sign-in method → Google → Enabled
 2. Optional: Authentication → Sign-in method → Email/Password → Enabled
 3. Authentication → Settings → Authorized domains → add your GitHub Pages domain
 4. Firestore Database created
 5. Firestore rules from `firestore.rules` published
+6. Google Calendar API enabled if you use calendar integration
 
-## Google Calendar API setup
+## Assigning roles
 
-Use the same Google Cloud project as Firebase:
+1. Open the app as the family owner/admin.
+2. Go to Settings.
+3. Under Family members, use the role dropdown.
+4. Set kids as `kid`.
+5. If role is `kid`, select the linked child name.
 
-`fadlon-family-hub`
+## Important
 
-Then:
-
-1. Open Google Cloud Console.
-2. Select project `fadlon-family-hub`.
-3. Go to APIs & Services → Library.
-4. Search for `Google Calendar API`.
-5. Click Enable.
-
-## Test
-
-Open:
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-5
-```
-
-Then:
-
-1. Sign in with Google.
-2. Go to Calendar.
-3. Click Connect Google Calendar.
-4. Approve read-only access.
-5. Select your family calendar.
-6. Confirm events appear in Calendar and Today dashboard.
-
-## Notes
-
-This version is read-only. It does not yet create or update Google Calendar events.
+Role hiding is implemented in the app UI for the family pilot. Stronger production security should enforce roles in Firestore rules after the data model is split into separate item documents.

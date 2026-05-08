@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V4.5</title>
+  <title>Family Command Center V4.6</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -45,17 +45,24 @@
       </form>
     </section>
 
+    <section id="roleBanner" class="role-banner hidden">
+      <div>
+        <strong id="roleBannerTitle">Family view</strong>
+        <span id="roleBannerText">Your visible tabs are based on your family role.</span>
+      </div>
+    </section>
+
     <nav class="tabs" aria-label="Main navigation">
-      <button class="tab active" data-screen="today">Today</button>
-      <button class="tab" data-screen="tasks">Tasks</button>
-      <button class="tab" data-screen="calendar">Calendar</button>
-      <button class="tab" data-screen="learning">Homework</button>
-      <button class="tab" data-screen="money">Money</button>
-      <button class="tab" data-screen="planning">Planning</button>
-      <button class="tab" data-screen="shopping">Shopping</button>
-      <button class="tab" data-screen="kids">Kids</button>
-      <button class="tab" data-screen="routines">Routines</button>
-      <button class="tab" data-screen="settings">Settings</button>
+      <button class="tab active" data-screen="today" data-roles="all">Today</button>
+      <button class="tab parent-only" data-screen="tasks" data-roles="parent">Tasks</button>
+      <button class="tab" data-screen="calendar" data-roles="all">Calendar</button>
+      <button class="tab" data-screen="learning" data-roles="all">Homework</button>
+      <button class="tab parent-only" data-screen="money" data-roles="parent">Money</button>
+      <button class="tab parent-only" data-screen="planning" data-roles="parent">Planning</button>
+      <button class="tab" data-screen="shopping" data-roles="all">Shopping</button>
+      <button class="tab" data-screen="kids" data-roles="all">Kids</button>
+      <button class="tab parent-only" data-screen="routines" data-roles="parent">Routines</button>
+      <button class="tab" data-screen="settings" data-roles="all">Settings</button>
     </nav>
 
     <main>
@@ -63,6 +70,17 @@
         <div class="summary-strip" id="summaryStrip"></div>
 
         <div class="grid">
+
+          <article id="kidDashboardCard" class="card kid-dashboard-card hidden">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Kid view</p>
+                <h2>My school & activities</h2>
+                <p class="muted">Homework, exams, activities, prep, and things to ask parents.</p>
+              </div>
+            </div>
+            <div id="kidDashboardList" class="list"></div>
+          </article>
           <article class="card">
             <div class="section-title">
               <div>
@@ -313,6 +331,24 @@
             <h2>Due this month</h2>
             <p class="muted">A wider view of upcoming school load.</p>
             <div id="schoolDueMonth" class="list"></div>
+          </article>
+
+          
+          <article id="kidRequestCard" class="card kid-request-card hidden">
+            <h2>Ask parents</h2>
+            <p class="muted">Use this for things you need parents to buy, sign, approve, or help with.</p>
+            <form id="kidRequestForm" class="stack-form">
+              <input id="kidRequestText" placeholder="Example: I need a parent to sign my field trip form" />
+              <select id="kidRequestType">
+                <option>Need signature</option>
+                <option>Need to buy</option>
+                <option>Need help</option>
+                <option>School question</option>
+                <option>Other</option>
+              </select>
+              <button type="submit">Send request to parents</button>
+            </form>
+            <div id="kidRequestList" class="list"></div>
           </article>
 
           <article class="card wide">
@@ -595,7 +631,7 @@
               <div class="section-title">
                 <div>
                   <h3>Family members in this space</h3>
-                  <p class="muted">See who joined the family space and who was recently active.</p>
+                  <p class="muted">See who joined the family space, who was recently active, and assign Parent/Kid roles.</p>
                 </div>
               </div>
               <div id="familyMembersList" class="members-list">

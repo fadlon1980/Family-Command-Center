@@ -1,5 +1,8 @@
 rules_version = '2';
 
+// V4.6 note: role-based panel hiding is enforced in the app UI for the family pilot.
+// A future production version should split items into separate documents and enforce parent/kid roles here.
+
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
