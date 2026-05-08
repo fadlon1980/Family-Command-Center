@@ -1,46 +1,53 @@
-# Family Command Center PWA V4.4 — Admin Reset Controls
+# Family Command Center PWA V4.5 — Google Calendar Basic Integration
 
-This version adds an admin-only reset area.
+This version adds basic Google Calendar read integration.
 
-## New in V4.4
+## New in V4.5
 
-- Admin controls section under Settings
-- Reset shared family data button
-- Button is visible only to:
-  - the family owner who created the family space
-  - members with role `owner` or `admin`
-  - emails listed in `window.FAMILY_ADMIN_EMAILS`
-- Reset requires typing `RESET`
-- Reset clears family operational data but keeps:
-  - family settings
-  - family member access
-  - cloud family space
+- Google Calendar connection from the Calendar tab
+- Read-only calendar permission
+- Select which Google Calendar to display
+- Pull events for the next 7 days
+- Show Google Calendar events in:
+  - Today dashboard
+  - Calendar tab
+- Open events in Google Calendar
 
-## Important security note
+## Important behavior
 
-This is a UI-level protection suitable for a family pilot.
+Calendar access is currently user-local:
 
-The current MVP stores the whole family state in one Firestore document, and the current rules allow family members to write that document. A future production version should split each item into separate Firestore documents and enforce role-based write permissions in Firestore rules.
+- Each parent can connect their own Google account.
+- Events are not copied to Firestore.
+- The selected Calendar ID is remembered on that browser.
+- The Calendar access token is kept only for the current browser session and may expire, so you may need to reconnect.
 
-## How to make Maayan an admin
+## Required Google setup
 
-Open `firebase-config.js` and update:
+In Google Cloud Console for your Firebase project:
 
-```js
-window.FAMILY_ADMIN_EMAILS = [
-  "your-google-email@gmail.com",
-  "maayan-google-email@gmail.com"
-];
-```
+1. Enable the Google Calendar API.
+2. Make sure Google sign-in is enabled in Firebase Authentication.
+3. Make sure your GitHub Pages domain is authorized.
 
-Use the exact Google email addresses used for sign-in.
+## How to use
 
-## After upload
+1. Open the app.
+2. Sign in with Google.
+3. Go to Calendar tab.
+4. Click **Connect Google Calendar**.
+5. Approve read-only calendar access.
+6. Select your family calendar.
+7. Click **Refresh calendar events** if needed.
 
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-4
+https://fadlon1980.github.io/Family-Command-Center/?version=4-5
 ```
 
-Go to Settings. If you are the owner or an admin email, you should see **Admin controls**.
+## Future calendar steps
+
+- V4.6: Add app events to Google Calendar
+- V4.7: Two-way sync / background refresh through backend
+- V4.8: Conflict detection between kids activities

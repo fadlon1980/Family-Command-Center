@@ -1,10 +1,10 @@
-# Firebase setup for Family Command Center V4.4
+# Firebase + Google Calendar setup for Family Command Center V4.5
 
-V4.4 adds admin-only reset controls.
+V4.5 adds Google Calendar read integration.
 
-## Required Firebase setup
+## Firebase setup
 
-Same as V4.3:
+Same as V4.4:
 
 1. Authentication → Sign-in method → Google → Enabled
 2. Optional: Authentication → Sign-in method → Email/Password → Enabled
@@ -12,29 +12,37 @@ Same as V4.3:
 4. Firestore Database created
 5. Firestore rules from `firestore.rules` published
 
-## Add admin emails
+## Google Calendar API setup
 
-Open `firebase-config.js` and set:
+Use the same Google Cloud project as Firebase:
 
-```js
-window.FAMILY_ADMIN_EMAILS = [
-  "your-google-email@gmail.com",
-  "maayan-google-email@gmail.com"
-];
-```
+`fadlon-family-hub`
 
-The family owner can also see the admin reset button automatically.
+Then:
 
-## Important note
-
-The reset button is hidden for non-admin users in the app UI. In this MVP, Firestore still allows family members to write the shared state document. For stronger enforcement, a future version should move each item into its own Firestore document and add role-based Firestore security rules.
+1. Open Google Cloud Console.
+2. Select project `fadlon-family-hub`.
+3. Go to APIs & Services → Library.
+4. Search for `Google Calendar API`.
+5. Click Enable.
 
 ## Test
 
-1. Upload V4.4 files to GitHub Pages.
-2. Open:
-   `https://fadlon1980.github.io/Family-Command-Center/?version=4-4`
-3. Sign in with your Google account.
-4. Go to Settings.
-5. Confirm you see Admin controls.
-6. Sign in as a non-admin user and confirm Admin controls are hidden.
+Open:
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-5
+```
+
+Then:
+
+1. Sign in with Google.
+2. Go to Calendar.
+3. Click Connect Google Calendar.
+4. Approve read-only access.
+5. Select your family calendar.
+6. Confirm events appear in Calendar and Today dashboard.
+
+## Notes
+
+This version is read-only. It does not yet create or update Google Calendar events.

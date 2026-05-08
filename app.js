@@ -1,6 +1,7 @@
-const STORAGE_KEY = "family-command-center-v4-4";
-const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-4";
+const STORAGE_KEY = "family-command-center-v4-5";
+const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-5";
 const LEGACY_CLOUD_FAMILY_ID_KEYS = [
+  "family-command-center-cloud-family-id-v4-4",
   "family-command-center-cloud-family-id-v4-3",
   "family-command-center-cloud-family-id-v4-2",
   "family-command-center-cloud-family-id-v4-1",
@@ -8,6 +9,10 @@ const LEGACY_CLOUD_FAMILY_ID_KEYS = [
   "family-command-center-cloud-family-id"
 ];
 const FIREBASE_SDK_VERSION = "12.13.0";
+const CALENDAR_TOKEN_KEY = "family-command-center-calendar-token-v4-5";
+const CALENDAR_SELECTED_ID_KEY = "family-command-center-calendar-selected-id-v4-5";
+const CALENDAR_CACHE_KEY = "family-command-center-calendar-events-cache-v4-5";
+const GOOGLE_CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
@@ -180,6 +185,16 @@ function saveState() {
   if (typeof scheduleCloudSave === "function") scheduleCloudSave();
 }
 
+
+function loadCalendarCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CALENDAR_CACHE_KEY) || "[]");
+    return Array.isArray(cached) ? cached : [];
+  } catch {
+    return [];
+  }
+}
+
 function getStoredFamilyId() {
   const current = localStorage.getItem(CLOUD_FAMILY_ID_KEY);
   if (current) return current;
@@ -197,6 +212,17 @@ let state = loadState();
 let taskFilter = "open";
 let paymentFilter = "open";
 let deferredInstallPrompt = null;
+
+let calendar = {
+  accessToken: sessionStorage.getItem(CALENDAR_TOKEN_KEY) || "",
+  selectedCalendarId: localStorage.getItem(CALENDAR_SELECTED_ID_KEY) || "",
+  calendars: [],
+  events: loadCalendarCache(),
+  connectedEmail: "",
+  lastLoadedAt: "",
+  loading: false,
+  error: ""
+};
 
 let cloud = {
   configured: false,
@@ -314,6 +340,7 @@ function render() {
   renderToday();
   renderTasks();
   renderEvents();
+  renderGoogleCalendar();
   renderLearning();
   renderPayments();
   renderPlanning();
@@ -376,6 +403,262 @@ function renderTasks() {
 function renderEvents() {
   const events = [...state.events].sort(sortEvents);
   renderList("eventList", events, renderEventItem, "No calendar items yet.");
+}
+
+
+
+function setGoogleCalendarStatus(message, level = "warn") {
+  const el = document.getElementById("googleCalendarStatus");
+  if (!el) return;
+  el.textContent = message;
+  el.className = `cloud-status ${level}`;
+}
+
+function renderGoogleCalendar() {
+  renderGoogleCalendarStatus();
+  renderCalendarSelect();
+  renderGoogleCalendarDashboard();
+  renderGoogleCalendarList();
+}
+
+function renderGoogleCalendarStatus() {
+  if (!document.getElementById("googleCalendarStatus")) return;
+
+  if (!cloud.user) {
+    setGoogleCalendarStatus("Sign in with Google first, then connect Google Calendar.", "warn");
+    return;
+  }
+
+  if (!calendar.accessToken) {
+    setGoogleCalendarStatus("Google Calendar is not connected yet. Click Connect Google Calendar.", "warn");
+    return;
+  }
+
+  if (calendar.loading) {
+    setGoogleCalendarStatus("Loading Google Calendar events...", "warn");
+    return;
+  }
+
+  if (calendar.error) {
+    setGoogleCalendarStatus(calendar.error, "bad");
+    return;
+  }
+
+  const selected = calendar.calendars.find(c => c.id === calendar.selectedCalendarId);
+  const label = selected ? selected.summary : "selected calendar";
+  const loaded = calendar.lastLoadedAt ? ` Last refresh: ${new Date(calendar.lastLoadedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.` : "";
+  setGoogleCalendarStatus(`Connected to Google Calendar${selected ? `: ${label}` : ""}.${loaded}`, "good");
+}
+
+function renderCalendarSelect() {
+  const select = document.getElementById("calendarSelect");
+  if (!select) return;
+
+  if (!calendar.calendars.length) {
+    select.innerHTML = `<option value="">Connect first</option>`;
+    return;
+  }
+
+  select.innerHTML = calendar.calendars.map(cal => {
+    const selected = cal.id === calendar.selectedCalendarId ? "selected" : "";
+    const primary = cal.primary ? " — primary" : "";
+    return `<option value="${escapeHtml(cal.id)}" ${selected}>${escapeHtml(cal.summary || cal.id)}${primary}</option>`;
+  }).join("");
+}
+
+function renderGoogleCalendarDashboard() {
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(today.getDate() + 1);
+
+  const todayEvents = calendar.events
+    .filter(event => isSameLocalDay(event.startDate, today))
+    .slice(0, 6);
+
+  renderList("todayGoogleCalendar", todayEvents, renderGoogleCalendarEventItem, calendar.accessToken ? "No Google Calendar events today." : "Connect Google Calendar from the Calendar tab.");
+}
+
+function renderGoogleCalendarList() {
+  renderList("googleCalendarList", calendar.events, renderGoogleCalendarEventItem, calendar.accessToken ? "No upcoming Google Calendar events found." : "Connect Google Calendar to load upcoming events.");
+}
+
+function isSameLocalDay(isoValue, date) {
+  if (!isoValue) return false;
+  const d = new Date(isoValue);
+  return d.getFullYear() === date.getFullYear()
+    && d.getMonth() === date.getMonth()
+    && d.getDate() === date.getDate();
+}
+
+function formatGoogleCalendarDateRange(event) {
+  const start = new Date(event.startDate);
+  const end = event.endDate ? new Date(event.endDate) : null;
+
+  if (event.allDay) {
+    return `${start.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · All day`;
+  }
+
+  const startLabel = start.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const endLabel = end ? end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+  return endLabel ? `${startLabel} – ${endLabel}` : startLabel;
+}
+
+function renderGoogleCalendarEventItem(event) {
+  return `
+    <div class="item">
+      <div class="item-main">
+        <div class="item-title">${escapeHtml(event.summary || "Untitled event")}</div>
+        <div class="item-meta">
+          <span class="badge calendar">Google Calendar</span>
+          <span class="badge">${escapeHtml(formatGoogleCalendarDateRange(event))}</span>
+          ${event.location ? `<span class="badge">${escapeHtml(event.location)}</span>` : ""}
+          ${event.calendarSummary ? `<span class="badge">${escapeHtml(event.calendarSummary)}</span>` : ""}
+        </div>
+      </div>
+      <div class="item-actions">
+        ${event.htmlLink ? `<a class="icon-btn" href="${escapeHtml(event.htmlLink)}" target="_blank" rel="noopener">Open</a>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+async function connectGoogleCalendar() {
+  try {
+    await ensureFirebase();
+    if (!cloud.user) throw new Error("Sign in with Google first.");
+
+    const provider = new cloud.fb.GoogleAuthProvider();
+    provider.addScope("profile");
+    provider.addScope("email");
+    provider.addScope(GOOGLE_CALENDAR_READONLY_SCOPE);
+    provider.setCustomParameters({ prompt: "consent select_account" });
+
+    calendar.loading = true;
+    calendar.error = "";
+    renderGoogleCalendar();
+
+    const result = await cloud.fb.signInWithPopup(cloud.auth, provider);
+    const credential = cloud.fb.GoogleAuthProvider.credentialFromResult(result);
+    if (!credential || !credential.accessToken) {
+      throw new Error("Google did not return a Calendar access token. Try connecting again.");
+    }
+
+    calendar.accessToken = credential.accessToken;
+    calendar.connectedEmail = result.user?.email || "";
+    sessionStorage.setItem(CALENDAR_TOKEN_KEY, calendar.accessToken);
+
+    await loadGoogleCalendars();
+    await loadGoogleCalendarEvents();
+  } catch (error) {
+    calendar.error = `Google Calendar connection failed: ${error.message}`;
+  } finally {
+    calendar.loading = false;
+    renderGoogleCalendar();
+  }
+}
+
+async function refreshGoogleCalendar() {
+  try {
+    if (!calendar.accessToken) {
+      throw new Error("Connect Google Calendar first.");
+    }
+
+    calendar.loading = true;
+    calendar.error = "";
+    renderGoogleCalendar();
+
+    if (!calendar.calendars.length) await loadGoogleCalendars();
+    await loadGoogleCalendarEvents();
+  } catch (error) {
+    calendar.error = `Could not refresh Google Calendar: ${error.message}`;
+  } finally {
+    calendar.loading = false;
+    renderGoogleCalendar();
+  }
+}
+
+async function calendarFetch(url) {
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${calendar.accessToken}`
+    }
+  });
+
+  if (response.status === 401) {
+    sessionStorage.removeItem(CALENDAR_TOKEN_KEY);
+    calendar.accessToken = "";
+    throw new Error("Calendar permission expired. Please connect Google Calendar again.");
+  }
+
+  if (response.status === 403) {
+    throw new Error("Calendar access was blocked. Make sure Google Calendar API is enabled in Google Cloud.");
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Google Calendar request failed with status ${response.status}.`);
+  }
+
+  return response.json();
+}
+
+async function loadGoogleCalendars() {
+  const data = await calendarFetch("https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader");
+  calendar.calendars = (data.items || []).map(item => ({
+    id: item.id,
+    summary: item.summary || item.id,
+    primary: Boolean(item.primary),
+    accessRole: item.accessRole
+  }));
+
+  if (!calendar.selectedCalendarId || !calendar.calendars.some(c => c.id === calendar.selectedCalendarId)) {
+    const familyCalendar = calendar.calendars.find(c => /family/i.test(c.summary || ""));
+    const primaryCalendar = calendar.calendars.find(c => c.primary);
+    calendar.selectedCalendarId = (familyCalendar || primaryCalendar || calendar.calendars[0] || {}).id || "";
+    if (calendar.selectedCalendarId) localStorage.setItem(CALENDAR_SELECTED_ID_KEY, calendar.selectedCalendarId);
+  }
+}
+
+async function loadGoogleCalendarEvents() {
+  if (!calendar.selectedCalendarId) {
+    calendar.events = [];
+    return;
+  }
+
+  const now = new Date();
+  const future = new Date();
+  future.setDate(now.getDate() + 7);
+
+  const params = new URLSearchParams({
+    timeMin: now.toISOString(),
+    timeMax: future.toISOString(),
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: "30"
+  });
+
+  const selected = calendar.calendars.find(c => c.id === calendar.selectedCalendarId);
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar.selectedCalendarId)}/events?${params.toString()}`;
+  const data = await calendarFetch(url);
+
+  calendar.events = (data.items || []).map(item => {
+    const allDay = Boolean(item.start?.date);
+    const startValue = item.start?.dateTime || `${item.start?.date}T00:00:00`;
+    const endValue = item.end?.dateTime || (item.end?.date ? `${item.end.date}T00:00:00` : "");
+    return {
+      id: item.id,
+      summary: item.summary || "Untitled event",
+      location: item.location || "",
+      htmlLink: item.htmlLink || "",
+      startDate: startValue,
+      endDate: endValue,
+      allDay,
+      calendarSummary: selected?.summary || ""
+    };
+  });
+
+  calendar.lastLoadedAt = new Date().toISOString();
+  localStorage.setItem(CALENDAR_CACHE_KEY, JSON.stringify(calendar.events));
 }
 
 
@@ -1864,6 +2147,16 @@ window.addEventListener("load", async () => {
       setCloudStatus(`Firebase setup problem: ${error.message}`, "bad");
     }
   }
+});
+
+
+
+document.getElementById("connectCalendarBtn")?.addEventListener("click", connectGoogleCalendar);
+document.getElementById("refreshCalendarBtn")?.addEventListener("click", refreshGoogleCalendar);
+document.getElementById("calendarSelect")?.addEventListener("change", async event => {
+  calendar.selectedCalendarId = event.target.value;
+  localStorage.setItem(CALENDAR_SELECTED_ID_KEY, calendar.selectedCalendarId);
+  await refreshGoogleCalendar();
 });
 
 

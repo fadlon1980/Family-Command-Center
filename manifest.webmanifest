@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.4",
+  "name": "Family Command Center V4.5",
   "short_name": "Family Hub",
-  "description": "A shared family command center with Google sign-in, auto-detect family space, family activity, and admin-only reset controls.",
+  "description": "A shared family command center with Google Calendar read integration, Google sign-in, auto-detect family space, family activity, and admin controls.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

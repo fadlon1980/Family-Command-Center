@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V4.4</title>
+  <title>Family Command Center V4.5</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -71,6 +71,17 @@
               </div>
             </div>
             <div id="todayEvents" class="list"></div>
+          </article>
+
+
+          <article class="card google-calendar-card">
+            <div class="section-title">
+              <div>
+                <h2>Google Calendar</h2>
+                <p class="muted">Events pulled from your connected Google Calendar.</p>
+              </div>
+            </div>
+            <div id="todayGoogleCalendar" class="list"></div>
           </article>
 
           <article class="card attention-card">
@@ -196,6 +207,47 @@
       </section>
 
       <section id="calendar" class="screen">
+
+        <article class="card wide google-calendar-connect-card">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Google Calendar</p>
+              <h2>Connected calendar</h2>
+              <p class="muted">Connect Google Calendar to show real family calendar events in the dashboard.</p>
+            </div>
+          </div>
+
+          <div id="googleCalendarStatus" class="cloud-status warn">Google Calendar is not connected yet.</div>
+
+          <div class="calendar-connect-grid">
+            <div class="calendar-connect-box">
+              <h3>1. Connect</h3>
+              <p class="muted">This asks Google for read-only Calendar permission.</p>
+              <button id="connectCalendarBtn" type="button">Connect Google Calendar</button>
+            </div>
+
+            <div class="calendar-connect-box">
+              <h3>2. Select calendar</h3>
+              <p class="muted">Choose the family calendar you want to display.</p>
+              <select id="calendarSelect" aria-label="Google Calendar selection">
+                <option value="">Connect first</option>
+              </select>
+            </div>
+
+            <div class="calendar-connect-box">
+              <h3>3. Refresh</h3>
+              <p class="muted">Pull latest events for the next 7 days.</p>
+              <button id="refreshCalendarBtn" type="button" class="secondary">Refresh calendar events</button>
+            </div>
+          </div>
+
+          <div class="calendar-tip">
+            Calendar access is read-only in V4.5. Events are not copied into Firestore yet, and each user connects their own Google account.
+          </div>
+
+          <div id="googleCalendarList" class="list"></div>
+        </article>
+
         <article class="card">
           <div class="section-title">
             <div>
