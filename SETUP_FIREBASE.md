@@ -1,42 +1,30 @@
-# Setup for Family Command Center V4.7
+const CACHE_NAME = "family-command-center-v4-7-2-2";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./firebase-config.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
+];
 
-V4.7 adds family-level Google Calendar configuration.
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
+  self.skipWaiting();
+});
 
-## Required setup
+self.addEventListener("activate", event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
+  );
+  self.clients.claim();
+});
 
-Same as V4.6:
-
-1. Firebase Authentication → Google provider enabled
-2. Firebase Authentication → Authorized domains includes:
-   `fadlon1980.github.io`
-3. Firestore Database created
-4. Firestore rules from `firestore.rules` published
-5. Google Calendar API enabled in Google Cloud project:
-   `fadlon-family-hub`
-
-## How to configure the family calendar
-
-1. Open the app:
-   `https://fadlon1980.github.io/Family-Command-Center/?version=4-7`
-2. Sign in as a parent/admin.
-3. Go to Calendar.
-4. Click **Connect Google Calendar**.
-5. Approve read-only access.
-6. Select the family calendar from the dropdown.
-7. Click **Save selected calendar as family calendar**.
-
-The selected calendar is stored in Firestore under:
-
-```text
-families/{familyId}.calendarConfig
-```
-
-## What other family members do
-
-Each family member still needs to click **Connect Google Calendar** once.
-
-If their Google account has access to the configured family calendar, the app will automatically select it.
-
-## Important limitation
-
-This is not yet automatic background push sync. It is family-level configuration for the selected calendar. True push/background sync requires a backend such as Firebase Cloud Functions or Cloud Run.
+self.addEventListener("fetch", event => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then(cached => cached || fetch(event.request).catch(() => caches.match("./index.html")))
+  );
+});
