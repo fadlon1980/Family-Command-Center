@@ -520,3 +520,52 @@ h3 { font-size: 1rem; margin-bottom: 0.2rem; }
     grid-template-columns: 1fr;
   }
 }
+
+
+.google-btn {
+  width: 100%;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.google-btn:hover {
+  background: #f8fafc;
+  border-color: #bfdbfe;
+}
+
+.google-btn::before {
+  content: "G";
+  display: inline-flex;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  margin: 0.15rem 0;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}

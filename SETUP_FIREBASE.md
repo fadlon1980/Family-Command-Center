@@ -1,58 +1,36 @@
-# Firebase setup for Family Command Center V4
+# Firebase setup for Family Command Center V4.1
 
-This version supports shared data across your phone, your wife's phone, and the kids' devices.
+This version uses Firebase Authentication with **Google Sign-In** and Cloud Firestore.
 
-## What you need to enable in Firebase
-
-1. Firebase Web app
-2. Firebase Authentication
-3. Email/Password sign-in
-4. Cloud Firestore
-5. Firestore security rules from `firestore.rules`
-
-## Step 1 — Create Firebase project
-
-1. Go to Firebase Console.
-2. Create a new project.
-3. Register a Web app.
-4. Copy the Firebase config object.
-
-## Step 2 — Update `firebase-config.js`
-
-Open `firebase-config.js` and replace the placeholder values with the config from Firebase.
-
-Example:
-
-```js
-window.FAMILY_FIREBASE_CONFIG = {
-  apiKey: "...",
-  authDomain: "...firebaseapp.com",
-  projectId: "...",
-  storageBucket: "...firebasestorage.app",
-  messagingSenderId: "...",
-  appId: "..."
-};
-```
-
-Firebase config values are not the same as your private password, but your Firestore rules must be correct before real use.
-
-## Step 3 — Enable Authentication
+## Step 1 — Enable Google Sign-In
 
 Firebase Console:
 
-Authentication → Sign-in method → Email/Password → Enable
+1. Open your project: `fadlon-family-hub`
+2. Go to Authentication
+3. Open **Sign-in method**
+4. Select **Google**
+5. Enable it
+6. Choose a support email
+7. Save
 
-Each family member should create/sign into their own account in the app.
+## Step 2 — Optional but recommended: Enable Email/Password
 
-## Step 4 — Create Cloud Firestore
+This keeps the original sign-in option as a backup.
 
 Firebase Console:
 
-Firestore Database → Create database
+Authentication → Sign-in method → Email/Password → Enable → Save
 
-Start in production mode if possible, then replace the rules with the content from `firestore.rules`.
+## Step 3 — Create Cloud Firestore
 
-## Step 5 — Add Firestore rules
+Firebase Console:
+
+Firestore Database → Create database → Production mode
+
+Choose a location, then finish the setup.
+
+## Step 4 — Publish Firestore rules
 
 Firebase Console:
 
@@ -60,21 +38,7 @@ Firestore Database → Rules
 
 Paste the content from `firestore.rules`, then publish.
 
-## Step 6 — Upload V4 files to GitHub Pages
-
-Upload the contents of this folder to your GitHub Pages repository root.
-
-Important files:
-
-- `index.html`
-- `app.js`
-- `styles.css`
-- `firebase-config.js`
-- `manifest.webmanifest`
-- `service-worker.js`
-- `icons/`
-
-## Step 7 — Authorize your GitHub Pages domain
+## Step 5 — Add Authorized Domain
 
 Firebase Console:
 
@@ -86,27 +50,38 @@ Add your GitHub Pages domain, for example:
 your-github-username.github.io
 ```
 
-## Step 8 — First use
+Do not include `https://`.
+Do not include the repository path.
 
-On your device:
+## Step 6 — Upload V4.1 files to GitHub Pages
 
-1. Open the app.
-2. Go to Settings.
-3. Create an account or sign in.
-4. Click **Create shared family space**.
-5. Copy the Family ID and Invite Code.
+Upload the contents of this folder to the root of your GitHub Pages repository.
 
-On your wife's/kids' devices:
+Important: upload the files inside the folder, not the folder itself.
 
-1. Open the same app link.
-2. Go to Settings.
-3. Create/sign into their account.
-4. Use **Join existing family space** with the Family ID and Invite Code.
+## Step 7 — Test sign-in
 
-## Current MVP limitation
+Open your app link with:
 
-This V4 syncs the whole family state as one document.
+```text
+?version=4-1
+```
 
-That is simple and good for a family pilot, but if two people edit at exactly the same second, the last save may win.
+Then go to Settings and click **Sign in with Google**.
 
-A future production version should store each task/payment/homework item as its own Firestore document.
+## Step 8 — Create and share family space
+
+You:
+
+1. Sign in with Google.
+2. Click **Create shared family space**.
+3. Copy the Family ID and Invite Code.
+
+Your wife/kids:
+
+1. Sign in with Google.
+2. Enter the Family ID and Invite Code under **Join existing family space**.
+
+## MVP limitation
+
+This version syncs the whole family state as one Firestore document. This is good for a family pilot, but a future production version should store each task/payment/homework item as a separate Firestore document.

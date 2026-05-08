@@ -1,4 +1,4 @@
-// Family Command Center V4 - Firebase config
+// Family Command Center V4.1 - Firebase config
 // Keep the variable name exactly as FAMILY_FIREBASE_CONFIG.
 
 window.FAMILY_FIREBASE_CONFIG = {

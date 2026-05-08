@@ -1,67 +1,58 @@
-# Family Command Center PWA V4 — Firebase Shared Sync
+# Family Command Center PWA V4.1 — Google Sign-In + Firebase Shared Sync
 
-This version adds shared family cloud sync using Firebase Authentication and Cloud Firestore.
+This version adds **Sign in with Google** while keeping Email/Password as a fallback.
 
-## New in V4
+## New in V4.1
 
-- Sign in / create account
-- Create shared family space
-- Join family space using Family ID + Invite Code
-- Sync the family dashboard across devices
-- Firebase setup file: `firebase-config.js`
-- Firestore rules file: `firestore.rules`
-- Step-by-step Firebase guide: `SETUP_FIREBASE.md`
-
-## Included modules
-
-- Today dashboard
-- Homework, exams, projects, quizzes, tests, and due dates
-- Payment attention dashboard
-- Week / month / year family expense summaries
-- Family tasks
-- Manual family calendar and kids activities
-- Shopping list
-- Kids cards
-- Inbox / brain dump
-- Tomorrow prep
-- Needs decision
-- School & admin tracker
-- Morning / evening / weekly routines
-- Quick capture
-- Export/import backup
-- Installable PWA files
-- Firebase shared sync
+- Sign in with Google
+- Email/password fallback still available
+- Firebase config is already filled with your `fadlon-family-hub` project details
+- Shared family cloud sync remains the same:
+  - Create shared family space
+  - Join using Family ID + Invite Code
+  - Sync across family devices
 
 ## Before uploading to GitHub Pages
 
-Open `firebase-config.js` and replace the placeholder values with your Firebase Web app config.
+Make sure Firebase Console has:
 
-Then publish these files to the root of your GitHub Pages repository.
+1. Authentication → Sign-in method → Google → Enabled
+2. Authentication → Sign-in method → Email/Password → Optional fallback, but recommended
+3. Authentication → Settings → Authorized domains → your GitHub Pages domain added
+4. Firestore Database created
+5. Firestore rules from `firestore.rules` published
 
-## After uploading
+## Files to upload to GitHub Pages
+
+Upload the contents of this folder to your repository root:
+
+- `index.html`
+- `app.js`
+- `styles.css`
+- `firebase-config.js`
+- `manifest.webmanifest`
+- `service-worker.js`
+- `firestore.rules`
+- `SETUP_FIREBASE.md`
+- `icons/`
+
+## First use
+
+You:
 
 1. Open the app.
 2. Go to Settings.
-3. Create/sign into your account.
-4. Create shared family space.
-5. Share Family ID and Invite Code with your wife/kids.
-6. Each family member signs in and joins the same family space.
+3. Click **Sign in with Google**.
+4. Click **Create shared family space**.
+5. Copy the Family ID and Invite Code.
+
+Your wife/kids:
+
+1. Open the same app link.
+2. Go to Settings.
+3. Click **Sign in with Google**.
+4. Use **Join existing family space** with the Family ID and Invite Code.
 
 ## Important privacy note
 
-Do not store highly sensitive data such as:
-
-- Credit card numbers
-- Bank account numbers
-- Passwords
-- Highly sensitive medical details
-
-Use payment labels like:
-
-- Soccer fee — $120
-- School lunch balance — $40
-- Dentist bill — $75
-
-## MVP limitation
-
-This version syncs the whole family state as one Firestore document. This is good for a family pilot, but a future production version should store each task/payment/homework item as a separate Firestore document.
+Do not store highly sensitive data such as credit card numbers, bank account numbers, passwords, or highly sensitive medical details.
