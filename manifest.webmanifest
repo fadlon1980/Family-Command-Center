@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.6",
+  "name": "Family Command Center V4.7",
   "short_name": "Family Hub",
-  "description": "A shared family command center with Parent/Kid roles and a kid-friendly view.",
+  "description": "A shared family command center with family-level Google Calendar configuration, Parent/Kid roles, Google sign-in, and Firebase sync.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

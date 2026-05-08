@@ -796,3 +796,16 @@ h3 { font-size: 1rem; margin-bottom: 0.2rem; }
   font-size: 0.86rem;
   font-weight: 700;
 }
+
+
+.family-calendar-panel {
+  margin-top: 1rem;
+  background: #ffffff;
+  border: 1px solid #bbf7d0;
+  border-radius: 22px;
+  padding: 1rem;
+}
+
+.family-calendar-panel .button-row {
+  margin-top: 0.85rem;
+}

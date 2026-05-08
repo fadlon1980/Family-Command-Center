@@ -1,5 +1,8 @@
 rules_version = '2';
 
+// V4.7 note: family calendar configuration is stored on families/{familyId}.calendarConfig.
+// Existing family member write access allows parents/admins to save this from the app UI.
+
 // V4.6 note: role-based panel hiding is enforced in the app UI for the family pilot.
 // A future production version should split items into separate documents and enforce parent/kid roles here.
 

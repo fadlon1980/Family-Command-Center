@@ -1,26 +1,42 @@
-# Firebase setup for Family Command Center V4.6
+# Setup for Family Command Center V4.7
 
-V4.6 adds Parent/Kid roles and kid-friendly view.
+V4.7 adds family-level Google Calendar configuration.
 
-## Required Firebase setup
+## Required setup
 
-Same as V4.5:
+Same as V4.6:
 
-1. Authentication → Sign-in method → Google → Enabled
-2. Optional: Authentication → Sign-in method → Email/Password → Enabled
-3. Authentication → Settings → Authorized domains → add your GitHub Pages domain
-4. Firestore Database created
-5. Firestore rules from `firestore.rules` published
-6. Google Calendar API enabled if you use calendar integration
+1. Firebase Authentication → Google provider enabled
+2. Firebase Authentication → Authorized domains includes:
+   `fadlon1980.github.io`
+3. Firestore Database created
+4. Firestore rules from `firestore.rules` published
+5. Google Calendar API enabled in Google Cloud project:
+   `fadlon-family-hub`
 
-## Assigning roles
+## How to configure the family calendar
 
-1. Open the app as the family owner/admin.
-2. Go to Settings.
-3. Under Family members, use the role dropdown.
-4. Set kids as `kid`.
-5. If role is `kid`, select the linked child name.
+1. Open the app:
+   `https://fadlon1980.github.io/Family-Command-Center/?version=4-7`
+2. Sign in as a parent/admin.
+3. Go to Calendar.
+4. Click **Connect Google Calendar**.
+5. Approve read-only access.
+6. Select the family calendar from the dropdown.
+7. Click **Save selected calendar as family calendar**.
 
-## Important
+The selected calendar is stored in Firestore under:
 
-Role hiding is implemented in the app UI for the family pilot. Stronger production security should enforce roles in Firestore rules after the data model is split into separate item documents.
+```text
+families/{familyId}.calendarConfig
+```
+
+## What other family members do
+
+Each family member still needs to click **Connect Google Calendar** once.
+
+If their Google account has access to the configured family calendar, the app will automatically select it.
+
+## Important limitation
+
+This is not yet automatic background push sync. It is family-level configuration for the selected calendar. True push/background sync requires a backend such as Firebase Cloud Functions or Cloud Run.

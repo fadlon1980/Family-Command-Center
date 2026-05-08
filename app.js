@@ -9,9 +9,9 @@ const LEGACY_CLOUD_FAMILY_ID_KEYS = [
   "family-command-center-cloud-family-id"
 ];
 const FIREBASE_SDK_VERSION = "12.13.0";
-const CALENDAR_TOKEN_KEY = "family-command-center-calendar-token-v4-5";
-const CALENDAR_SELECTED_ID_KEY = "family-command-center-calendar-selected-id-v4-5";
-const CALENDAR_CACHE_KEY = "family-command-center-calendar-events-cache-v4-5";
+const CALENDAR_TOKEN_KEY = "family-command-center-calendar-token-v4-7";
+const CALENDAR_SELECTED_ID_KEY = "family-command-center-calendar-selected-id-v4-7";
+const CALENDAR_CACHE_KEY = "family-command-center-calendar-events-cache-v4-7";
 const GOOGLE_CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
 function uid() {
@@ -231,6 +231,7 @@ let cloud = {
   user: null,
   familyId: getStoredFamilyId(),
   familyDoc: null,
+  unsubscribeFamily: null,
   app: null,
   auth: null,
   db: null,
@@ -407,6 +408,144 @@ function renderEvents() {
 
 
 
+
+function getFamilyCalendarConfig() {
+  return cloud.familyDoc?.calendarConfig || {};
+}
+
+function canManageFamilyCalendar() {
+  return isParentRole() || isFamilyAdminUser();
+}
+
+function renderFamilyCalendarPanel() {
+  const panel = document.getElementById("familyCalendarPanel");
+  const status = document.getElementById("familyCalendarStatus");
+  const saveBtn = document.getElementById("saveFamilyCalendarBtn");
+  const clearBtn = document.getElementById("clearFamilyCalendarBtn");
+
+  if (!panel) return;
+
+  const showPanel = Boolean(cloud.user && cloud.familyId);
+  panel.classList.toggle("hidden", !showPanel);
+
+  if (!showPanel) return;
+
+  const cfg = getFamilyCalendarConfig();
+  const selected = calendar.calendars.find(c => c.id === calendar.selectedCalendarId);
+  const canManage = canManageFamilyCalendar();
+
+  if (status) {
+    if (cfg.selectedCalendarId) {
+      status.textContent = `Family calendar: ${cfg.selectedCalendarName || cfg.selectedCalendarId}. Each user should connect Google Calendar once.`;
+    } else {
+      status.textContent = "No family calendar is configured yet. A parent can connect Google Calendar, select the shared family calendar, then save it here.";
+    }
+  }
+
+  if (saveBtn) {
+    saveBtn.classList.toggle("hidden", !canManage);
+    saveBtn.disabled = !calendar.selectedCalendarId || !selected;
+  }
+
+  if (clearBtn) {
+    clearBtn.classList.toggle("hidden", !canManage || !cfg.selectedCalendarId);
+  }
+}
+
+async function saveSelectedCalendarAsFamilyCalendar() {
+  if (!canManageFamilyCalendar()) {
+    alert("Only parents/admins can change the family calendar setting.");
+    return;
+  }
+
+  if (!cloud.familyId || !cloud.db || !cloud.fb || !cloud.user) {
+    alert("Sign in and join/create a family space first.");
+    return;
+  }
+
+  if (!calendar.selectedCalendarId) {
+    alert("Connect Google Calendar and select a calendar first.");
+    return;
+  }
+
+  const selected = calendar.calendars.find(c => c.id === calendar.selectedCalendarId);
+  if (!selected) {
+    alert("Selected calendar was not found. Try refreshing calendars.");
+    return;
+  }
+
+  const familyRef = cloud.fb.doc(cloud.db, "families", cloud.familyId);
+  await cloud.fb.setDoc(familyRef, {
+    calendarConfig: {
+      selectedCalendarId: selected.id,
+      selectedCalendarName: selected.summary || selected.id,
+      updatedBy: cloud.user.uid,
+      updatedByEmail: cloud.user.email || "",
+      updatedAt: cloud.fb.serverTimestamp()
+    }
+  }, { merge: true });
+
+  cloud.familyDoc = {
+    ...(cloud.familyDoc || {}),
+    calendarConfig: {
+      selectedCalendarId: selected.id,
+      selectedCalendarName: selected.summary || selected.id,
+      updatedBy: cloud.user.uid,
+      updatedByEmail: cloud.user.email || ""
+    }
+  };
+
+  renderGoogleCalendar();
+  alert("Family calendar setting was saved.");
+}
+
+async function clearFamilyCalendarSetting() {
+  if (!canManageFamilyCalendar()) {
+    alert("Only parents/admins can change the family calendar setting.");
+    return;
+  }
+
+  if (!confirm("Clear the family calendar setting for this family space?")) return;
+
+  const familyRef = cloud.fb.doc(cloud.db, "families", cloud.familyId);
+  await cloud.fb.setDoc(familyRef, {
+    calendarConfig: {
+      selectedCalendarId: "",
+      selectedCalendarName: "",
+      updatedBy: cloud.user.uid,
+      updatedByEmail: cloud.user.email || "",
+      updatedAt: cloud.fb.serverTimestamp()
+    }
+  }, { merge: true });
+
+  cloud.familyDoc = {
+    ...(cloud.familyDoc || {}),
+    calendarConfig: {
+      selectedCalendarId: "",
+      selectedCalendarName: ""
+    }
+  };
+
+  renderGoogleCalendar();
+}
+
+function applyFamilyCalendarPreference() {
+  const cfg = getFamilyCalendarConfig();
+  if (!cfg.selectedCalendarId || !calendar.calendars.length) return false;
+
+  const found = calendar.calendars.find(c => c.id === cfg.selectedCalendarId);
+  if (!found) return false;
+
+  if (calendar.selectedCalendarId !== found.id) {
+    calendar.selectedCalendarId = found.id;
+    localStorage.setItem(CALENDAR_SELECTED_ID_KEY, calendar.selectedCalendarId);
+    return true;
+  }
+
+  return false;
+}
+
+
 function setGoogleCalendarStatus(message, level = "warn") {
   const el = document.getElementById("googleCalendarStatus");
   if (!el) return;
@@ -417,6 +556,7 @@ function setGoogleCalendarStatus(message, level = "warn") {
 function renderGoogleCalendar() {
   renderGoogleCalendarStatus();
   renderCalendarSelect();
+  renderFamilyCalendarPanel();
   renderGoogleCalendarDashboard();
   renderGoogleCalendarList();
 }
@@ -430,7 +570,7 @@ function renderGoogleCalendarStatus() {
   }
 
   if (!calendar.accessToken) {
-    setGoogleCalendarStatus("Google Calendar is not connected yet. Click Connect Google Calendar.", "warn");
+    setGoogleCalendarStatus("Google Calendar is not connected yet. Click Connect Google Calendar. If a family calendar is configured, it will auto-select after connection.", "warn");
     return;
   }
 
@@ -611,10 +751,14 @@ async function loadGoogleCalendars() {
     accessRole: item.accessRole
   }));
 
-  if (!calendar.selectedCalendarId || !calendar.calendars.some(c => c.id === calendar.selectedCalendarId)) {
+  const appliedFamilyPreference = applyFamilyCalendarPreference();
+
+  if (!appliedFamilyPreference && (!calendar.selectedCalendarId || !calendar.calendars.some(c => c.id === calendar.selectedCalendarId))) {
+    const cfg = getFamilyCalendarConfig();
+    const configuredCalendar = cfg.selectedCalendarId ? calendar.calendars.find(c => c.id === cfg.selectedCalendarId) : null;
     const familyCalendar = calendar.calendars.find(c => /family/i.test(c.summary || ""));
     const primaryCalendar = calendar.calendars.find(c => c.primary);
-    calendar.selectedCalendarId = (familyCalendar || primaryCalendar || calendar.calendars[0] || {}).id || "";
+    calendar.selectedCalendarId = (configuredCalendar || familyCalendar || primaryCalendar || calendar.calendars[0] || {}).id || "";
     if (calendar.selectedCalendarId) localStorage.setItem(CALENDAR_SELECTED_ID_KEY, calendar.selectedCalendarId);
   }
 }
@@ -1830,8 +1974,10 @@ async function ensureFirebase() {
       stopPresenceHeartbeat();
       if (cloud.unsubscribeState) cloud.unsubscribeState();
       if (cloud.unsubscribeMembers) cloud.unsubscribeMembers();
+      if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
       cloud.unsubscribeState = null;
       cloud.unsubscribeMembers = null;
+      cloud.unsubscribeFamily = null;
       cloud.stateRef = null;
       cloud.memberRef = null;
       cloud.members = [];
@@ -1925,8 +2071,10 @@ async function signOutCloud() {
   stopPresenceHeartbeat();
   if (cloud.unsubscribeState) cloud.unsubscribeState();
   if (cloud.unsubscribeMembers) cloud.unsubscribeMembers();
+  if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
   cloud.unsubscribeState = null;
   cloud.unsubscribeMembers = null;
+  cloud.unsubscribeFamily = null;
   cloud.members = [];
   cloud.ready = false;
   cloud.familyDoc = null;
@@ -2014,6 +2162,19 @@ async function connectFamily(familyId) {
     cloud.familyDoc = familySnap.data();
     await saveUserCurrentFamily(familyId, cloud.user.uid === cloud.familyDoc.createdBy ? "owner" : "member");
   }
+
+  if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
+  cloud.unsubscribeFamily = cloud.fb.onSnapshot(familyRef, snap => {
+    if (!snap.exists()) return;
+    cloud.familyDoc = snap.data();
+    applyFamilyCalendarPreference();
+    renderCloudPanel();
+    renderGoogleCalendar();
+    applyRoleBasedView();
+  }, error => {
+    cloud.lastError = error.message;
+    setCloudStatus(`Could not load family settings: ${error.message}`, "bad");
+  });
 
   cloud.stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
 
