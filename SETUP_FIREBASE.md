@@ -1,23 +1,30 @@
-# V4.8.1 Setup Notes
+# V4.8.2 Setup Notes
 
-No Firebase rule change is required for V4.8.1.
+No Firestore rule change is required.
 
-This version only stabilizes local browser storage keys and migrates older V4.x local data into stable keys.
+This version is a reliability fix for the Google Calendar buttons.
 
-## Upload
+## After upload
 
-Upload all files to GitHub Pages and open:
+Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-1
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-2
 ```
 
-## Check
+Then go to:
 
-After opening V4.8.1, confirm:
+Calendar → Connect Google Calendar
 
-1. You are still signed in or can sign in with Google.
-2. Your family space auto-detects.
-3. Your role is still correct.
-4. Your family data appears.
-5. Calendar selected family calendar is remembered if it was previously configured.
+You should see immediate feedback in the Google Calendar status area.
+
+## If it still does nothing
+
+You are probably still loading an older cached app version.
+
+Try:
+
+1. Incognito/InPrivate window
+2. Clear site data for `fadlon1980.github.io`
+3. Remove and reinstall the PWA icon
+4. Confirm GitHub has the V4.8.2 `app.js` and `index.html`

@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.1",
+  "name": "Family Command Center V4.8.2",
   "short_name": "Family Hub",
-  "description": "Stability update with persistent storage keys across future releases and migration from older V4.x keys.",
+  "description": "Calendar button reliability fix with stable storage keys and smart family tools.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

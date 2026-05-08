@@ -767,7 +767,7 @@ async function connectGoogleCalendar() {
     renderGoogleCalendar();
 
     await ensureFirebase();
-    if (!cloud.user) throw new Error("Sign in with Google first in Settings, then connect Google Calendar.");
+    if (!cloud.user) throw new Error("Sign in with Google first in Settings, wait until Cloud sync is active, then connect Google Calendar.");
 
     const provider = new cloud.fb.GoogleAuthProvider();
     provider.addScope("profile");
@@ -2350,7 +2350,101 @@ async function saveCloudNow() {
 }
 
 
+
+function calendarButtonDebug(message, level = "warn") {
+  try {
+    setGoogleCalendarStatus(message, level);
+  } catch {
+    const el = document.getElementById("googleCalendarStatus");
+    if (el) {
+      el.textContent = message;
+      el.className = `cloud-status ${level}`;
+    } else {
+      alert(message);
+    }
+  }
+}
+
+window.__fccCalendarConnectClick = async function(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  calendarButtonDebug("Connect Google Calendar button clicked. Opening Google permission window...", "warn");
+  try {
+    await connectGoogleCalendar();
+  } catch (error) {
+    calendarButtonDebug(`Calendar connect failed before popup opened: ${error.message || error}`, "bad");
+  }
+};
+
+window.__fccCalendarRefreshClick = async function(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  calendarButtonDebug("Refreshing Google Calendar events...", "warn");
+  try {
+    await refreshGoogleCalendar();
+  } catch (error) {
+    calendarButtonDebug(`Calendar refresh failed: ${error.message || error}`, "bad");
+  }
+};
+
+window.__fccCalendarSaveClick = async function(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  try {
+    await saveSelectedCalendarAsFamilyCalendar();
+  } catch (error) {
+    calendarButtonDebug(`Could not save family calendar: ${error.message || error}`, "bad");
+  }
+};
+
+function wireCalendarControlsBackupDelegation() {
+  if (window.__fccCalendarDelegationWired) return;
+  window.__fccCalendarDelegationWired = true;
+
+  document.addEventListener("click", async event => {
+    const connect = event.target.closest("#connectCalendarBtn");
+    if (connect) {
+      await window.__fccCalendarConnectClick(event);
+      return;
+    }
+
+    const refresh = event.target.closest("#refreshCalendarBtn");
+    if (refresh) {
+      await window.__fccCalendarRefreshClick(event);
+      return;
+    }
+
+    const save = event.target.closest("#saveFamilyCalendarBtn");
+    if (save) {
+      await window.__fccCalendarSaveClick(event);
+      return;
+    }
+  }, true);
+}
+
+window.addEventListener("error", event => {
+  const msg = event?.message || "";
+  if (/calendar|google|firebase|popup|connectCalendar/i.test(msg)) {
+    calendarButtonDebug(`Calendar script error: ${msg}`, "bad");
+  }
+});
+
+window.addEventListener("unhandledrejection", event => {
+  const msg = event?.reason?.message || String(event?.reason || "");
+  if (/calendar|google|firebase|popup|connectCalendar|permission/i.test(msg)) {
+    calendarButtonDebug(`Calendar error: ${msg}`, "bad");
+  }
+});
+
+
 function wireGoogleCalendarControls() {
+  wireCalendarControlsBackupDelegation();
   const connectBtn = document.getElementById("connectCalendarBtn");
   const refreshBtn = document.getElementById("refreshCalendarBtn");
   const calendarSelect = document.getElementById("calendarSelect");
@@ -2476,6 +2570,7 @@ window.addEventListener("load", async () => {
 
 
 
+wireCalendarControlsBackupDelegation();
 render();
 
 

@@ -1,47 +1,39 @@
-# Family Command Center PWA V4.8.1 — Stable Storage Keys
+# Family Command Center PWA V4.8.2 — Calendar Button Reliability Fix
 
-This is a stability update.
+This update keeps stable storage keys from V4.8.1 and adds a stronger backup click handler for Google Calendar buttons.
 
-## What changed
+## Fixed in V4.8.2
 
-The app now uses stable local storage keys going forward:
-
-- `family-command-center-state`
-- `family-command-center-cloud-family-id`
-- `family-command-center-calendar-selected-id`
-- `family-command-center-calendar-events-cache`
-- `family-command-center-calendar-token`
-
-This means future app updates should not force you to reconnect or rejoin the family space just because the version changed.
-
-## Migration
-
-V4.8.1 automatically looks for older V4.x local storage keys and migrates them into the new stable keys when the app loads.
-
-It checks older keys from:
-
-- V4
-- V4.1
-- V4.2
-- V4.3
-- V4.4
-- V4.5
-- V4.6
-- V4.7
-- V4.7.1
-- V4.7.2
-- V4.8
-
-## Still expected
-
-Google Calendar access tokens may still expire or require reconnecting, because Calendar access is browser-session based. But the selected family calendar and family space should now be more stable.
+- Connect Google Calendar button now has:
+  - normal JavaScript event handler
+  - document-level backup handler
+  - inline backup handler
+- The app should show visible feedback immediately after clicking.
+- Calendar-related JavaScript errors are shown in the Calendar status area.
+- Refresh calendar and Save selected calendar buttons also have backup handlers.
 
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-1
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-2
 ```
 
-## Future rule
+## Expected behavior
 
-Do not change local storage key names in future releases unless there is a very specific reason and a migration path.
+When you click **Connect Google Calendar**, you should immediately see:
+
+```text
+Connect Google Calendar button clicked. Opening Google permission window...
+```
+
+Then a Google popup should open.
+
+## If no popup opens
+
+1. Allow popups for `fadlon1980.github.io`.
+2. Test in Chrome, not inside an in-app browser.
+3. Try Incognito to bypass old PWA cache.
+4. Confirm Google Calendar API is enabled in Google Cloud.
+5. Confirm API key website restrictions include:
+   - `https://fadlon1980.github.io/*`
+   - `https://fadlon1980.github.io/Family-Command-Center/*`
