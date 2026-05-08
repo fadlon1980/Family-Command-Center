@@ -1,6 +1,7 @@
 const STORAGE_KEY = "family-command-center-v4-5";
 const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-5";
 const LEGACY_CLOUD_FAMILY_ID_KEYS = [
+  "family-command-center-cloud-family-id-v4-7",
   "family-command-center-cloud-family-id-v4-4",
   "family-command-center-cloud-family-id-v4-3",
   "family-command-center-cloud-family-id-v4-2",
@@ -9,9 +10,9 @@ const LEGACY_CLOUD_FAMILY_ID_KEYS = [
   "family-command-center-cloud-family-id"
 ];
 const FIREBASE_SDK_VERSION = "12.13.0";
-const CALENDAR_TOKEN_KEY = "family-command-center-calendar-token-v4-7";
-const CALENDAR_SELECTED_ID_KEY = "family-command-center-calendar-selected-id-v4-7";
-const CALENDAR_CACHE_KEY = "family-command-center-calendar-events-cache-v4-7";
+const CALENDAR_TOKEN_KEY = "family-command-center-calendar-token-v4-7-1";
+const CALENDAR_SELECTED_ID_KEY = "family-command-center-calendar-selected-id-v4-7-1";
+const CALENDAR_CACHE_KEY = "family-command-center-calendar-events-cache-v4-7-1";
 const GOOGLE_CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
 function uid() {
@@ -663,9 +664,22 @@ function renderGoogleCalendarEventItem(event) {
 }
 
 async function connectGoogleCalendar() {
+  const btn = document.getElementById("connectCalendarBtn");
+  const originalText = btn?.textContent || "Connect Google Calendar";
+
   try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Opening Google permission window...";
+    }
+
+    calendar.loading = true;
+    calendar.error = "";
+    setGoogleCalendarStatus("Opening Google permission window. If nothing appears, check if the browser blocked a popup.", "warn");
+    renderGoogleCalendar();
+
     await ensureFirebase();
-    if (!cloud.user) throw new Error("Sign in with Google first.");
+    if (!cloud.user) throw new Error("Sign in with Google first in Settings, then connect Google Calendar.");
 
     const provider = new cloud.fb.GoogleAuthProvider();
     provider.addScope("profile");
@@ -673,26 +687,42 @@ async function connectGoogleCalendar() {
     provider.addScope(GOOGLE_CALENDAR_READONLY_SCOPE);
     provider.setCustomParameters({ prompt: "consent select_account" });
 
-    calendar.loading = true;
-    calendar.error = "";
-    renderGoogleCalendar();
-
     const result = await cloud.fb.signInWithPopup(cloud.auth, provider);
     const credential = cloud.fb.GoogleAuthProvider.credentialFromResult(result);
     if (!credential || !credential.accessToken) {
-      throw new Error("Google did not return a Calendar access token. Try connecting again.");
+      throw new Error("Google did not return a Calendar access token. Try connecting again and approve Calendar read-only access.");
     }
 
     calendar.accessToken = credential.accessToken;
     calendar.connectedEmail = result.user?.email || "";
     sessionStorage.setItem(CALENDAR_TOKEN_KEY, calendar.accessToken);
 
+    setGoogleCalendarStatus("Google Calendar permission approved. Loading calendars...", "warn");
+    renderGoogleCalendar();
+
     await loadGoogleCalendars();
     await loadGoogleCalendarEvents();
+
+    setGoogleCalendarStatus("Google Calendar connected successfully.", "good");
   } catch (error) {
-    calendar.error = `Google Calendar connection failed: ${error.message}`;
+    let message = error.message || String(error);
+
+    if (message.includes("popup") || message.includes("closed-by-user")) {
+      message = "Google Calendar connection was cancelled or the popup was blocked. Allow popups for this site and try again.";
+    }
+
+    if (message.includes("requests-from-referer") || message.includes("API key")) {
+      message = "Google blocked the request because the API key website restriction does not allow this GitHub Pages URL. Add https://fadlon1980.github.io/* and https://fadlon1980.github.io/Family-Command-Center/* to the API key website restrictions.";
+    }
+
+    calendar.error = `Google Calendar connection failed: ${message}`;
+    setGoogleCalendarStatus(calendar.error, "bad");
   } finally {
     calendar.loading = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
     renderGoogleCalendar();
   }
 }
@@ -2231,6 +2261,50 @@ async function saveCloudNow() {
   }
 }
 
+
+function wireGoogleCalendarControls() {
+  const connectBtn = document.getElementById("connectCalendarBtn");
+  const refreshBtn = document.getElementById("refreshCalendarBtn");
+  const calendarSelect = document.getElementById("calendarSelect");
+  const saveBtn = document.getElementById("saveFamilyCalendarBtn");
+  const clearBtn = document.getElementById("clearFamilyCalendarBtn");
+
+  connectBtn?.addEventListener("click", async event => {
+    event.preventDefault();
+    await connectGoogleCalendar();
+  });
+
+  refreshBtn?.addEventListener("click", async event => {
+    event.preventDefault();
+    await refreshGoogleCalendar();
+  });
+
+  calendarSelect?.addEventListener("change", async event => {
+    calendar.selectedCalendarId = event.target.value;
+    localStorage.setItem(CALENDAR_SELECTED_ID_KEY, calendar.selectedCalendarId);
+    if (calendar.accessToken) await refreshGoogleCalendar();
+    renderGoogleCalendar();
+  });
+
+  saveBtn?.addEventListener("click", async event => {
+    event.preventDefault();
+    try {
+      await saveSelectedCalendarAsFamilyCalendar();
+    } catch (error) {
+      alert(`Could not save family calendar: ${error.message}`);
+    }
+  });
+
+  clearBtn?.addEventListener("click", async event => {
+    event.preventDefault();
+    try {
+      await clearFamilyCalendarSetting();
+    } catch (error) {
+      alert(`Could not clear family calendar: ${error.message}`);
+    }
+  });
+}
+
 function wireCloudControls() {
   const googleSignInBtn = document.getElementById("googleSignInBtn");
   const loginBtn = document.getElementById("loginBtn");
@@ -2300,6 +2374,7 @@ function wireCloudControls() {
 
 window.addEventListener("load", async () => {
   wireCloudControls();
+  wireGoogleCalendarControls();
   renderCloudPanel();
   if (isFirebaseConfigured()) {
     try {
@@ -2311,14 +2386,6 @@ window.addEventListener("load", async () => {
 });
 
 
-
-document.getElementById("connectCalendarBtn")?.addEventListener("click", connectGoogleCalendar);
-document.getElementById("refreshCalendarBtn")?.addEventListener("click", refreshGoogleCalendar);
-document.getElementById("calendarSelect")?.addEventListener("change", async event => {
-  calendar.selectedCalendarId = event.target.value;
-  localStorage.setItem(CALENDAR_SELECTED_ID_KEY, calendar.selectedCalendarId);
-  await refreshGoogleCalendar();
-});
 
 
 render();
