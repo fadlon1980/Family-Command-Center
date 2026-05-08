@@ -1,102 +1,49 @@
-# Firebase setup for Family Command Center V4.2
+# Firebase setup for Family Command Center V4.3
 
-This version uses Firebase Authentication with **Google Sign-In** and Cloud Firestore.
+This version uses Firebase Authentication with Google Sign-In, Cloud Firestore, and auto-detect family space.
 
-## Step 1 — Enable Google Sign-In
+## Required Firebase setup
 
-Firebase Console:
+1. Authentication → Sign-in method → Google → Enabled
+2. Optional: Authentication → Sign-in method → Email/Password → Enabled
+3. Authentication → Settings → Authorized domains → add your GitHub Pages domain
+4. Firestore Database created
+5. Updated Firestore rules from `firestore.rules` published
 
-1. Open your project: `fadlon-family-hub`
-2. Go to Authentication
-3. Open **Sign-in method**
-4. Select **Google**
-5. Enable it
-6. Choose a support email
-7. Save
+## Important V4.3 rule change
 
-## Step 2 — Optional but recommended: Enable Email/Password
+V4.3 adds this Firestore path:
 
-This keeps the original sign-in option as a backup.
+```text
+users/{userId}
+```
 
-Firebase Console:
+This allows the app to remember:
 
-Authentication → Sign-in method → Email/Password → Enable → Save
+```text
+currentFamilyId
+```
 
-## Step 3 — Create Cloud Firestore
+for each Google account.
 
-Firebase Console:
+This is what allows a user to sign in from a different device and automatically reconnect to the right family space.
 
-Firestore Database → Create database → Production mode
-
-Choose a location, then finish the setup.
-
-## Step 4 — Publish Firestore rules
+## Publish rules
 
 Firebase Console:
 
 Firestore Database → Rules
 
-Paste the content from `firestore.rules`, then publish.
+Paste the full content from `firestore.rules`, then click Publish.
 
-## Step 5 — Add Authorized Domain
+## Test
 
-Firebase Console:
-
-Authentication → Settings → Authorized domains
-
-Add your GitHub Pages domain, for example:
+Open:
 
 ```text
-your-github-username.github.io
+https://fadlon1980.github.io/Family-Command-Center/?version=4-3
 ```
 
-Do not include `https://`.
-Do not include the repository path.
+Sign in with Google.
 
-## Step 6 — Upload V4.2 files to GitHub Pages
-
-Upload the contents of this folder to the root of your GitHub Pages repository.
-
-Important: upload the files inside the folder, not the folder itself.
-
-## Step 7 — Test sign-in
-
-Open your app link with:
-
-```text
-?version=4-1
-```
-
-Then go to Settings and click **Sign in with Google**.
-
-## Step 8 — Create and share family space
-
-You:
-
-1. Sign in with Google.
-2. Click **Create shared family space**.
-3. Copy the Family ID and Invite Code.
-
-Your wife/kids:
-
-1. Sign in with Google.
-2. Enter the Family ID and Invite Code under **Join existing family space**.
-
-## MVP limitation
-
-This version syncs the whole family state as one Firestore document. This is good for a family pilot, but a future production version should store each task/payment/homework item as a separate Firestore document.
-
-
-## V4.2 Family Members / Activity Status
-
-No extra Firebase setup is needed beyond the existing Firestore rules.
-
-The app stores member presence here:
-
-```text
-families/{familyId}/members/{userId}
-```
-
-The app updates `lastSeen` about every 60 seconds while the app is open.
-
-A member is shown as **Active now** if their last heartbeat was within about 3 minutes.
+If you already have a family space but the app does not find it, join once using Family ID + Invite Code. After that, it should remember your family space across devices.

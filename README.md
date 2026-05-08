@@ -1,50 +1,34 @@
-# Family Command Center PWA V4.2 — Family Members + Activity Status
+# Family Command Center PWA V4.3 — Auto-detect Family Space
 
-This version adds a family members panel to the Firebase shared sync area.
+This version adds automatic family-space detection after Google login.
 
-## New in V4.2
+## New in V4.3
 
-- See who joined the family space
-- Show member email/name/photo from Google sign-in
-- Show role: owner or member
-- Show “You” for the current signed-in user
-- Show recent activity:
-  - Active now
-  - Last seen X min/hr ago
-- Uses a lightweight Firestore heartbeat while the app is open
+- After a user creates or joins a family space once, the app saves their current family space in `users/{userId}`.
+- On any device, after Google sign-in, the app checks `users/{userId}.currentFamilyId`.
+- If found, it automatically opens the right family space.
+- It also migrates older local Family ID values from V4/V4.1/V4.2 when available.
 
-## Existing features
+## Important
 
-- Sign in with Google
-- Email/password fallback
-- Create shared family space
-- Join family space with Family ID + Invite Code
-- Shared family cloud sync
-- Homework and exams
-- Payments and expenses
-- Tasks
-- Calendar items
-- Planning, decisions, school/admin, shopping, kids view, and routines
+Existing family members who joined before V4.3 may need to join once more on one device. After that, V4.3 will save their family profile and future logins on other devices should auto-detect the family space.
 
-## Firebase requirements
+## Firebase rules update required
 
-Make sure Firebase Console has:
+V4.3 adds a `users/{uid}` profile document. You must publish the updated `firestore.rules` file.
 
-1. Authentication → Sign-in method → Google → Enabled
-2. Authentication → Settings → Authorized domains → your GitHub Pages domain added
-3. Firestore Database created
-4. Firestore rules from `firestore.rules` published
+Go to:
 
-## How to test family members
+Firebase Console → Firestore Database → Rules
 
-1. Sign in with Google on your phone.
-2. Create or join the family space.
-3. Ask your wife to sign in with Google and join the same family space.
-4. Go to Settings.
-5. Look under “Family members in this space”.
+Paste the content from `firestore.rules`, then click Publish.
 
-You should see both users and recent activity.
+## How to test auto-detect
 
-## MVP limitation
-
-“Active now” is based on a heartbeat every 60 seconds while the app is open. If someone closes the app suddenly, they may continue to appear active for up to about 3 minutes.
+1. Upload V4.3 to GitHub Pages.
+2. Publish the updated Firestore rules.
+3. Sign in with Google.
+4. Create or join your family space once.
+5. Open the app on a different device/browser.
+6. Sign in with the same Google account.
+7. The app should automatically open your family space without entering Family ID again.

@@ -1,5 +1,11 @@
-const STORAGE_KEY = "family-command-center-v4-2";
-const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-2";
+const STORAGE_KEY = "family-command-center-v4-3";
+const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-3";
+const LEGACY_CLOUD_FAMILY_ID_KEYS = [
+  "family-command-center-cloud-family-id-v4-2",
+  "family-command-center-cloud-family-id-v4-1",
+  "family-command-center-cloud-family-id-v4",
+  "family-command-center-cloud-family-id"
+];
 const FIREBASE_SDK_VERSION = "12.13.0";
 
 function uid() {
@@ -173,6 +179,19 @@ function saveState() {
   if (typeof scheduleCloudSave === "function") scheduleCloudSave();
 }
 
+function getStoredFamilyId() {
+  const current = localStorage.getItem(CLOUD_FAMILY_ID_KEY);
+  if (current) return current;
+  for (const key of LEGACY_CLOUD_FAMILY_ID_KEYS) {
+    const value = localStorage.getItem(key);
+    if (value) {
+      localStorage.setItem(CLOUD_FAMILY_ID_KEY, value);
+      return value;
+    }
+  }
+  return "";
+}
+
 let state = loadState();
 let taskFilter = "open";
 let paymentFilter = "open";
@@ -183,7 +202,7 @@ let cloud = {
   initialized: false,
   ready: false,
   user: null,
-  familyId: localStorage.getItem(CLOUD_FAMILY_ID_KEY) || "",
+  familyId: getStoredFamilyId(),
   familyDoc: null,
   app: null,
   auth: null,
@@ -1238,7 +1257,7 @@ function renderCloudPanel() {
   } else if (cloud.ready && cloud.familyId) {
     setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${cloud.familyId}`, "good");
   } else {
-    setCloudStatus(`Signed in as ${cloud.user.email || "user"}. Create or join a family space to start syncing.`, "warn");
+    setCloudStatus(`Signed in as ${cloud.user.email || "user"}. Looking for your family space, or create/join one to start syncing.`, "warn");
   }
 
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !cloud.user);
@@ -1444,14 +1463,25 @@ async function ensureFirebase() {
     }
 
     renderCloudPanel();
-    const savedFamilyId = localStorage.getItem(CLOUD_FAMILY_ID_KEY);
-    if (savedFamilyId) {
-      try {
+
+    try {
+      const savedFamilyId = getStoredFamilyId();
+      if (savedFamilyId) {
         await connectFamily(savedFamilyId);
-      } catch (error) {
-        cloud.lastError = error.message;
-        setCloudStatus(`Signed in, but could not reconnect to family space: ${error.message}`, "bad");
+        return;
       }
+
+      const profileFamilyId = await getUserCurrentFamilyId();
+      if (profileFamilyId) {
+        localStorage.setItem(CLOUD_FAMILY_ID_KEY, profileFamilyId);
+        await connectFamily(profileFamilyId);
+        return;
+      }
+
+      setCloudStatus(`Signed in as ${user.email || "user"}. No family space found yet. Create one or join with Family ID + Invite Code.`, "warn");
+    } catch (error) {
+      cloud.lastError = error.message;
+      setCloudStatus(`Signed in, but could not auto-detect your family space: ${error.message}`, "bad");
     }
   });
 
@@ -1466,6 +1496,31 @@ function randomCode(prefix = "", length = 6) {
   return out;
 }
 
+
+
+async function getUserCurrentFamilyId() {
+  if (!cloud.user || !cloud.db || !cloud.fb) return "";
+  const profileRef = cloud.fb.doc(cloud.db, "users", cloud.user.uid);
+  const profileSnap = await cloud.fb.getDoc(profileRef);
+  if (!profileSnap.exists()) return "";
+  const profile = profileSnap.data() || {};
+  return profile.currentFamilyId || "";
+}
+
+async function saveUserCurrentFamily(familyId, role = "member") {
+  if (!cloud.user || !familyId || !cloud.db || !cloud.fb) return;
+
+  const profileRef = cloud.fb.doc(cloud.db, "users", cloud.user.uid);
+  await cloud.fb.setDoc(profileRef, {
+    email: cloud.user.email || "",
+    displayName: cloud.user.displayName || "",
+    photoURL: cloud.user.photoURL || "",
+    currentFamilyId: familyId,
+    lastFamilyId: familyId,
+    role,
+    updatedAt: cloud.fb.serverTimestamp()
+  }, { merge: true });
+}
 
 async function signInWithGoogle() {
   await ensureFirebase();
@@ -1536,6 +1591,7 @@ async function createFamilySpace() {
   });
 
   localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
+  await saveUserCurrentFamily(familyId, "owner");
   await connectFamily(familyId);
 }
 
@@ -1560,6 +1616,7 @@ async function joinFamilySpace(familyId, inviteCode) {
   });
 
   localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
+  await saveUserCurrentFamily(familyId, "member");
   await connectFamily(familyId);
 }
 
@@ -1577,6 +1634,7 @@ async function connectFamily(familyId) {
   const familySnap = await cloud.fb.getDoc(familyRef);
   if (familySnap.exists()) {
     cloud.familyDoc = familySnap.data();
+    await saveUserCurrentFamily(familyId, cloud.user.uid === cloud.familyDoc.createdBy ? "owner" : "member");
   }
 
   cloud.stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
