@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8",
+  "name": "Family Command Center V4.8.1",
   "short_name": "Family Hub",
-  "description": "Smart reminders, daily digest, equipment checklists, chores and allowance, conflict detection, and smart quick capture.",
+  "description": "Stability update with persistent storage keys across future releases and migration from older V4.x keys.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
