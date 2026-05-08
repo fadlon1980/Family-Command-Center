@@ -1,5 +1,5 @@
-const STORAGE_KEY = "family-command-center-v4";
-const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id";
+const STORAGE_KEY = "family-command-center-v4-1";
+const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-1";
 const FIREBASE_SDK_VERSION = "12.13.0";
 
 function uid() {
@@ -1228,9 +1228,9 @@ function renderCloudPanel() {
   }
 
   if (!cloud.initialized) {
-    setCloudStatus("Firebase config found. Sign in to start cloud sync.", "warn");
+    setCloudStatus("Firebase config found. Sign in with Google or email/password to start cloud sync.", "warn");
   } else if (!cloud.user) {
-    setCloudStatus("Firebase is ready. Please sign in or create an account.", "warn");
+    setCloudStatus("Firebase is ready. Please sign in with Google or create/sign into an account.", "warn");
   } else if (cloud.ready && cloud.familyId) {
     setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${cloud.familyId}`, "good");
   } else {
@@ -1279,6 +1279,8 @@ async function ensureFirebase() {
     onAuthStateChanged: authMod.onAuthStateChanged,
     createUserWithEmailAndPassword: authMod.createUserWithEmailAndPassword,
     signInWithEmailAndPassword: authMod.signInWithEmailAndPassword,
+    GoogleAuthProvider: authMod.GoogleAuthProvider,
+    signInWithPopup: authMod.signInWithPopup,
     signOut: authMod.signOut,
     getFirestore: fsMod.getFirestore,
     doc: fsMod.doc,
@@ -1326,6 +1328,14 @@ function randomCode(prefix = "", length = 6) {
   let out = prefix;
   for (let i = 0; i < length; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
+}
+
+
+async function signInWithGoogle() {
+  await ensureFirebase();
+  const provider = new cloud.fb.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  await cloud.fb.signInWithPopup(cloud.auth, provider);
 }
 
 async function signUpWithEmail(email, password) {
@@ -1465,11 +1475,20 @@ async function saveCloudNow() {
 }
 
 function wireCloudControls() {
+  const googleSignInBtn = document.getElementById("googleSignInBtn");
   const loginBtn = document.getElementById("loginBtn");
   const signupBtn = document.getElementById("signupBtn");
   const logoutBtn = document.getElementById("logoutBtn");
   const createFamilyBtn = document.getElementById("createFamilyBtn");
   const joinForm = document.getElementById("joinFamilyForm");
+
+  googleSignInBtn?.addEventListener("click", async () => {
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      setCloudStatus(`Google sign-in failed: ${error.message}`, "bad");
+    }
+  });
 
   loginBtn?.addEventListener("click", async () => {
     try {
