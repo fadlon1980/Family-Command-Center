@@ -1,6 +1,7 @@
-const STORAGE_KEY = "family-command-center-v4-3";
-const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-3";
+const STORAGE_KEY = "family-command-center-v4-4";
+const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id-v4-4";
 const LEGACY_CLOUD_FAMILY_ID_KEYS = [
+  "family-command-center-cloud-family-id-v4-3",
   "family-command-center-cloud-family-id-v4-2",
   "family-command-center-cloud-family-id-v4-1",
   "family-command-center-cloud-family-id-v4",
@@ -1194,12 +1195,18 @@ document.getElementById("importFile").addEventListener("change", event => {
   reader.readAsText(file);
 });
 
-document.getElementById("resetBtn").addEventListener("click", () => {
-  if (!confirm("Reset all data and return to demo data?")) return;
+document.getElementById("resetBtn")?.addEventListener("click", () => {
+  if (!isFamilyAdminUser()) {
+    alert("Only family admins can reset data.");
+    return;
+  }
+  if (!confirm("Reset local data and return to demo data?")) return;
   state = demoData();
   saveState();
   render();
 });
+
+document.getElementById("adminResetSharedBtn")?.addEventListener("click", resetSharedFamilyData);
 
 window.addEventListener("beforeinstallprompt", event => {
   event.preventDefault();
@@ -1235,6 +1242,93 @@ function setCloudStatus(message, level = "warn") {
   el.className = `cloud-status ${level}`;
 }
 
+
+function getConfiguredAdminEmails() {
+  return (window.FAMILY_ADMIN_EMAILS || [])
+    .map(email => String(email || "").trim().toLowerCase())
+    .filter(Boolean)
+    .filter(email => !email.includes("your-email") && !email.includes("maayan-email"));
+}
+
+function getCurrentMemberRecord() {
+  if (!cloud.user || !Array.isArray(cloud.members)) return null;
+  return cloud.members.find(member => member.uid === cloud.user.uid) || null;
+}
+
+function isFamilyAdminUser() {
+  if (!cloud.user) return false;
+
+  const userEmail = String(cloud.user.email || "").toLowerCase();
+  const configuredAdmins = getConfiguredAdminEmails();
+
+  if (configuredAdmins.includes(userEmail)) return true;
+  if (cloud.familyDoc?.createdBy && cloud.familyDoc.createdBy === cloud.user.uid) return true;
+
+  const member = getCurrentMemberRecord();
+  return ["owner", "admin"].includes(String(member?.role || "").toLowerCase());
+}
+
+function renderAdminControls() {
+  const panel = document.getElementById("adminControls");
+  if (!panel) return;
+
+  const show = Boolean(cloud.user && cloud.familyId && isFamilyAdminUser());
+  panel.classList.toggle("hidden", !show);
+}
+
+function createEmptyFamilyState() {
+  return normalizeState({
+    settings: state.settings || demoData().settings,
+    tasks: [],
+    events: [],
+    payments: [],
+    shopping: [],
+    inbox: [],
+    prepItems: [],
+    decisions: [],
+    adminItems: [],
+    schoolItems: [],
+    routines: {
+      morning: [],
+      evening: [],
+      weekly: []
+    }
+  });
+}
+
+async function resetSharedFamilyData() {
+  if (!isFamilyAdminUser()) {
+    alert("Only family admins can reset the shared family data.");
+    return;
+  }
+
+  if (!cloud.ready || !cloud.stateRef || !cloud.user) {
+    alert("Cloud sync must be active before resetting shared data.");
+    return;
+  }
+
+  const backupFirst = confirm(
+    "This will clear shared tasks, homework, payments, shopping, planning items, events, and routines for the whole family.\\n\\n" +
+    "Before resetting, it is recommended to click Export backup.\\n\\n" +
+    "Continue?"
+  );
+
+  if (!backupFirst) return;
+
+  const typed = prompt('Type RESET to confirm clearing the shared family data.');
+  if (typed !== "RESET") {
+    alert("Reset cancelled.");
+    return;
+  }
+
+  state = createEmptyFamilyState();
+  saveState();
+  await saveCloudNow();
+  render();
+  alert("Shared family data was reset. Family settings and member access were kept.");
+}
+
+
 function renderCloudPanel() {
   const statusEl = document.getElementById("cloudStatus");
   if (!statusEl) return;
@@ -1263,6 +1357,7 @@ function renderCloudPanel() {
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !cloud.user);
 
   renderFamilyMembers();
+  renderAdminControls();
 
   if (shareBox) {
     if (cloud.familyDoc && cloud.familyId) {

@@ -668,3 +668,23 @@ h3 { font-size: 1rem; margin-bottom: 0.2rem; }
   font-size: 0.86rem;
   font-weight: 700;
 }
+
+
+.admin-controls {
+  margin-top: 1rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 22px;
+  padding: 1rem;
+}
+
+.admin-warning {
+  margin: 0.85rem 0;
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
+  border-radius: 16px;
+  padding: 0.85rem;
+  font-weight: 800;
+  line-height: 1.35;
+}

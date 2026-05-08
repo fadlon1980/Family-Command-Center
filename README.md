@@ -1,34 +1,46 @@
-# Family Command Center PWA V4.3 — Auto-detect Family Space
+# Family Command Center PWA V4.4 — Admin Reset Controls
 
-This version adds automatic family-space detection after Google login.
+This version adds an admin-only reset area.
 
-## New in V4.3
+## New in V4.4
 
-- After a user creates or joins a family space once, the app saves their current family space in `users/{userId}`.
-- On any device, after Google sign-in, the app checks `users/{userId}.currentFamilyId`.
-- If found, it automatically opens the right family space.
-- It also migrates older local Family ID values from V4/V4.1/V4.2 when available.
+- Admin controls section under Settings
+- Reset shared family data button
+- Button is visible only to:
+  - the family owner who created the family space
+  - members with role `owner` or `admin`
+  - emails listed in `window.FAMILY_ADMIN_EMAILS`
+- Reset requires typing `RESET`
+- Reset clears family operational data but keeps:
+  - family settings
+  - family member access
+  - cloud family space
 
-## Important
+## Important security note
 
-Existing family members who joined before V4.3 may need to join once more on one device. After that, V4.3 will save their family profile and future logins on other devices should auto-detect the family space.
+This is a UI-level protection suitable for a family pilot.
 
-## Firebase rules update required
+The current MVP stores the whole family state in one Firestore document, and the current rules allow family members to write that document. A future production version should split each item into separate Firestore documents and enforce role-based write permissions in Firestore rules.
 
-V4.3 adds a `users/{uid}` profile document. You must publish the updated `firestore.rules` file.
+## How to make Maayan an admin
 
-Go to:
+Open `firebase-config.js` and update:
 
-Firebase Console → Firestore Database → Rules
+```js
+window.FAMILY_ADMIN_EMAILS = [
+  "your-google-email@gmail.com",
+  "maayan-google-email@gmail.com"
+];
+```
 
-Paste the content from `firestore.rules`, then click Publish.
+Use the exact Google email addresses used for sign-in.
 
-## How to test auto-detect
+## After upload
 
-1. Upload V4.3 to GitHub Pages.
-2. Publish the updated Firestore rules.
-3. Sign in with Google.
-4. Create or join your family space once.
-5. Open the app on a different device/browser.
-6. Sign in with the same Google account.
-7. The app should automatically open your family space without entering Family ID again.
+Open:
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-4
+```
+
+Go to Settings. If you are the owner or an admin email, you should see **Admin controls**.

@@ -1,49 +1,40 @@
-# Firebase setup for Family Command Center V4.3
+# Firebase setup for Family Command Center V4.4
 
-This version uses Firebase Authentication with Google Sign-In, Cloud Firestore, and auto-detect family space.
+V4.4 adds admin-only reset controls.
 
 ## Required Firebase setup
+
+Same as V4.3:
 
 1. Authentication → Sign-in method → Google → Enabled
 2. Optional: Authentication → Sign-in method → Email/Password → Enabled
 3. Authentication → Settings → Authorized domains → add your GitHub Pages domain
 4. Firestore Database created
-5. Updated Firestore rules from `firestore.rules` published
+5. Firestore rules from `firestore.rules` published
 
-## Important V4.3 rule change
+## Add admin emails
 
-V4.3 adds this Firestore path:
+Open `firebase-config.js` and set:
 
-```text
-users/{userId}
+```js
+window.FAMILY_ADMIN_EMAILS = [
+  "your-google-email@gmail.com",
+  "maayan-google-email@gmail.com"
+];
 ```
 
-This allows the app to remember:
+The family owner can also see the admin reset button automatically.
 
-```text
-currentFamilyId
-```
+## Important note
 
-for each Google account.
-
-This is what allows a user to sign in from a different device and automatically reconnect to the right family space.
-
-## Publish rules
-
-Firebase Console:
-
-Firestore Database → Rules
-
-Paste the full content from `firestore.rules`, then click Publish.
+The reset button is hidden for non-admin users in the app UI. In this MVP, Firestore still allows family members to write the shared state document. For stronger enforcement, a future version should move each item into its own Firestore document and add role-based Firestore security rules.
 
 ## Test
 
-Open:
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-3
-```
-
-Sign in with Google.
-
-If you already have a family space but the app does not find it, join once using Family ID + Invite Code. After that, it should remember your family space across devices.
+1. Upload V4.4 files to GitHub Pages.
+2. Open:
+   `https://fadlon1980.github.io/Family-Command-Center/?version=4-4`
+3. Sign in with your Google account.
+4. Go to Settings.
+5. Confirm you see Admin controls.
+6. Sign in as a non-admin user and confirm Admin controls are hidden.
