@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.2",
+  "name": "Family Command Center V4.8.4",
   "short_name": "Family Hub",
-  "description": "Calendar button reliability fix with stable storage keys and smart family tools.",
+  "description": "Automatic role assignment for parents and kids based on email mappings in Settings.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

@@ -1,5 +1,8 @@
 rules_version = '2';
 
+// V4.8.4 note: automatic role assignment stores roleConfig under families/{familyId}.
+// Existing family member write access allows family admins/parents to save this from the app UI.
+
 // V4.7 note: family calendar configuration is stored on families/{familyId}.calendarConfig.
 // Existing family member write access allows parents/admins to save this from the app UI.
 

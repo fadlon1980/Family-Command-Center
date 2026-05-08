@@ -483,8 +483,73 @@ function getFamilyCalendarConfig() {
   return cloud.familyDoc?.calendarConfig || {};
 }
 
+
+// V4.8.3 safety helpers.
+// These prevent calendar/admin code from failing if a role helper was missing after an update.
+function getCurrentRole() {
+  if (!cloud || !cloud.user) return "guest";
+
+  const member = typeof getCurrentMemberRecord === "function" ? getCurrentMemberRecord() : null;
+  const memberRole = String(member?.role || "").toLowerCase();
+
+  if (["owner", "admin", "parent", "kid", "viewer"].includes(memberRole)) return memberRole;
+  if (cloud.familyDoc?.createdBy && cloud.familyDoc.createdBy === cloud.user.uid) return "owner";
+  if (typeof isFamilyAdminUser === "function" && isFamilyAdminUser()) return "admin";
+
+  // Safe default for existing family members before roles are fully assigned.
+  return "parent";
+}
+
+function isParentRole(role = getCurrentRole()) {
+  return ["owner", "admin", "parent"].includes(String(role || "").toLowerCase());
+}
+
+function isKidRole(role = getCurrentRole()) {
+  return String(role || "").toLowerCase() === "kid";
+}
+
+function getKidLinkedChildName() {
+  const member = typeof getCurrentMemberRecord === "function" ? getCurrentMemberRecord() : null;
+  if (member?.childName) return member.childName;
+  return state?.settings?.children?.[0] || "Kid 1";
+}
+
+function applyRoleBasedView() {
+  const role = getCurrentRole();
+  const isKid = isKidRole(role) || role === "viewer";
+
+  document.body.dataset.role = role;
+
+  const banner = document.getElementById("roleBanner");
+  const title = document.getElementById("roleBannerTitle");
+  const text = document.getElementById("roleBannerText");
+
+  if (banner && cloud?.user) {
+    banner.classList.remove("hidden");
+    if (title) title.textContent = isKid ? "Kid view" : "Parent view";
+    if (text) text.textContent = isKid
+      ? "You can focus on homework, exams, chores, activities, and requests."
+      : "You can manage the full family dashboard.";
+  }
+
+  document.querySelectorAll("[data-roles='parent'], .parent-only").forEach(el => {
+    el.classList.toggle("hidden", isKid);
+  });
+
+  const kidCard = document.getElementById("kidDashboardCard");
+  if (kidCard) kidCard.classList.toggle("hidden", !isKid);
+
+  const kidRequestCard = document.getElementById("kidRequestCard");
+  if (kidRequestCard) kidRequestCard.classList.toggle("hidden", !isKid);
+}
+
+
 function canManageFamilyCalendar() {
-  return isParentRole() || isFamilyAdminUser();
+  try {
+    return isParentRole() || (typeof isFamilyAdminUser === "function" && isFamilyAdminUser());
+  } catch {
+    return Boolean(cloud?.user);
+  }
 }
 
 function renderFamilyCalendarPanel() {
@@ -1788,6 +1853,213 @@ function setCloudStatus(message, level = "warn") {
 }
 
 
+
+function normalizeEmailList(input) {
+  if (Array.isArray(input)) {
+    return input.map(email => String(email || "").trim().toLowerCase()).filter(Boolean);
+  }
+  return String(input || "")
+    .split(/[\n,;]+/)
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseKidMappings(input) {
+  if (Array.isArray(input)) return input;
+
+  return String(input || "")
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split(/\s*=\s*|\s*:\s*|\s*->\s*/);
+      if (parts.length < 2) return null;
+      const email = String(parts[0] || "").trim().toLowerCase();
+      const childName = String(parts.slice(1).join(" ").trim());
+      if (!email || !childName) return null;
+      return { email, childName };
+    })
+    .filter(Boolean);
+}
+
+function getRoleConfig() {
+  const cfg = cloud.familyDoc?.roleConfig || {};
+  const adminEmails = getConfiguredAdminEmails ? getConfiguredAdminEmails() : [];
+  return {
+    parentEmails: normalizeEmailList(cfg.parentEmails || adminEmails),
+    kidMappings: Array.isArray(cfg.kidMappings) ? cfg.kidMappings : [],
+    defaultRole: cfg.defaultRole || "viewer"
+  };
+}
+
+function roleForEmail(email, uid = "") {
+  email = String(email || "").trim().toLowerCase();
+  const cfg = getRoleConfig();
+
+  if (cloud.familyDoc?.createdBy && uid && cloud.familyDoc.createdBy === uid) {
+    return { role: "owner", childName: "" };
+  }
+
+  if (cfg.parentEmails.includes(email)) {
+    return { role: "parent", childName: "" };
+  }
+
+  const kid = cfg.kidMappings.find(item => String(item.email || "").toLowerCase() === email);
+  if (kid) {
+    return { role: "kid", childName: kid.childName || "" };
+  }
+
+  return { role: cfg.defaultRole || "viewer", childName: "" };
+}
+
+async function autoAssignCurrentUserRole() {
+  if (!cloud.user || !cloud.familyId || !cloud.db || !cloud.fb) return;
+
+  const member = typeof getCurrentMemberRecord === "function" ? getCurrentMemberRecord() : null;
+  const assignment = roleForEmail(cloud.user.email || "", cloud.user.uid);
+
+  // Do not downgrade owner/admin unless the user is creator.
+  const existingRole = String(member?.role || "").toLowerCase();
+  if (["owner", "admin"].includes(existingRole) && assignment.role !== "owner") return;
+
+  const memberRef = cloud.fb.doc(cloud.db, "families", cloud.familyId, "members", cloud.user.uid);
+  await cloud.fb.setDoc(memberRef, {
+    role: assignment.role,
+    childName: assignment.childName || member?.childName || "",
+    roleAutoAssigned: true,
+    roleAutoAssignedAt: cloud.fb.serverTimestamp()
+  }, { merge: true });
+}
+
+async function applyRoleRulesToAllMembers() {
+  if (!isFamilyAdminUser()) {
+    alert("Only family admins can apply role rules.");
+    return;
+  }
+
+  if (!cloud.familyId || !cloud.db || !cloud.fb || !cloud.members.length) {
+    alert("Family members are not loaded yet.");
+    return;
+  }
+
+  for (const member of cloud.members) {
+    const assignment = roleForEmail(member.email || "", member.uid);
+    const currentRole = String(member.role || "").toLowerCase();
+
+    // Keep owner/admin safe unless matching owner.
+    if (["owner", "admin"].includes(currentRole) && assignment.role !== "owner") continue;
+
+    const ref = cloud.fb.doc(cloud.db, "families", cloud.familyId, "members", member.uid);
+    await cloud.fb.setDoc(ref, {
+      role: assignment.role,
+      childName: assignment.childName || member.childName || "",
+      roleAutoAssigned: true,
+      roleAutoAssignedAt: cloud.fb.serverTimestamp(),
+      roleAutoAssignedBy: cloud.user.uid
+    }, { merge: true });
+  }
+
+  alert("Role rules were applied to current family members.");
+}
+
+function renderRoleSetupPanel() {
+  const panel = document.getElementById("roleSetupPanel");
+  const parentInput = document.getElementById("parentEmailsInput");
+  const kidInput = document.getElementById("kidMappingsInput");
+  const defaultSelect = document.getElementById("defaultRoleSelect");
+  const summary = document.getElementById("roleRulesSummary");
+
+  if (!panel) return;
+
+  const show = Boolean(cloud.user && cloud.familyId && isFamilyAdminUser());
+  panel.classList.toggle("hidden", !show);
+
+  if (!show) return;
+
+  const cfg = getRoleConfig();
+
+  if (parentInput && !parentInput.dataset.loaded) {
+    parentInput.value = cfg.parentEmails.join("\n");
+    parentInput.dataset.loaded = "true";
+  }
+
+  if (kidInput && !kidInput.dataset.loaded) {
+    kidInput.value = cfg.kidMappings.map(item => `${item.email} = ${item.childName}`).join("\n");
+    kidInput.dataset.loaded = "true";
+  }
+
+  if (defaultSelect && !defaultSelect.dataset.loaded) {
+    defaultSelect.value = cfg.defaultRole || "viewer";
+    defaultSelect.dataset.loaded = "true";
+  }
+
+  if (summary) {
+    summary.innerHTML = `
+      <div><strong>Parents/admin emails:</strong> ${cfg.parentEmails.length ? escapeHtml(cfg.parentEmails.join(", ")) : "None configured"}</div>
+      <div><strong>Kid mappings:</strong> ${cfg.kidMappings.length ? escapeHtml(cfg.kidMappings.map(k => `${k.email} → ${k.childName}`).join(", ")) : "None configured"}</div>
+      <div><strong>Default unknown role:</strong> ${escapeHtml(cfg.defaultRole || "viewer")}</div>
+    `;
+  }
+}
+
+async function saveRoleSetupFromForm() {
+  if (!isFamilyAdminUser()) {
+    alert("Only family admins can save role rules.");
+    return;
+  }
+
+  const parentEmails = normalizeEmailList(document.getElementById("parentEmailsInput")?.value || "");
+  const kidMappings = parseKidMappings(document.getElementById("kidMappingsInput")?.value || "");
+  const defaultRole = document.getElementById("defaultRoleSelect")?.value || "viewer";
+
+  const familyRef = cloud.fb.doc(cloud.db, "families", cloud.familyId);
+  await cloud.fb.setDoc(familyRef, {
+    roleConfig: {
+      parentEmails,
+      kidMappings,
+      defaultRole,
+      updatedBy: cloud.user.uid,
+      updatedByEmail: cloud.user.email || "",
+      updatedAt: cloud.fb.serverTimestamp()
+    }
+  }, { merge: true });
+
+  cloud.familyDoc = {
+    ...(cloud.familyDoc || {}),
+    roleConfig: { parentEmails, kidMappings, defaultRole }
+  };
+
+  // Allow the form to reload from saved values if needed.
+  ["parentEmailsInput", "kidMappingsInput", "defaultRoleSelect"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) delete el.dataset.loaded;
+  });
+
+  renderRoleSetupPanel();
+  await applyRoleRulesToAllMembers();
+}
+
+function wireRoleSetupControls() {
+  document.getElementById("roleSetupForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await saveRoleSetupFromForm();
+    } catch (error) {
+      alert(`Could not save role rules: ${error.message}`);
+    }
+  });
+
+  document.getElementById("applyRoleRulesBtn")?.addEventListener("click", async event => {
+    event.preventDefault();
+    try {
+      await applyRoleRulesToAllMembers();
+    } catch (error) {
+      alert(`Could not apply role rules: ${error.message}`);
+    }
+  });
+}
+
+
 function getConfiguredAdminEmails() {
   return (window.FAMILY_ADMIN_EMAILS || [])
     .map(email => String(email || "").trim().toLowerCase())
@@ -2299,6 +2571,7 @@ async function connectFamily(familyId) {
   const membersRef = cloud.fb.collection(cloud.db, "families", familyId, "members");
   cloud.unsubscribeMembers = cloud.fb.onSnapshot(membersRef, snapshot => {
     cloud.members = snapshot.docs.map(docSnap => ({ uid: docSnap.id, ...docSnap.data() }));
+    autoAssignCurrentUserRole().catch(error => { cloud.lastError = error.message; });
     renderFamilyMembers();
   }, error => {
     cloud.lastError = error.message;
@@ -2325,6 +2598,7 @@ async function connectFamily(familyId) {
   });
 
   cloud.ready = true;
+  await autoAssignCurrentUserRole().catch(error => { cloud.lastError = error.message; });
   renderCloudPanel();
 }
 
@@ -2557,6 +2831,7 @@ function wireCloudControls() {
 window.addEventListener("load", async () => {
   wireCloudControls();
   wireGoogleCalendarControls();
+  wireRoleSetupControls();
   renderCloudPanel();
   if (isFirebaseConfigured()) {
     try {

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V4.8.2</title>
+  <title>Family Command Center V4.8.4</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -738,6 +738,45 @@
             <button id="resetBtn" class="danger hidden">Reset demo data</button>
           </div>
           
+          
+          <div id="roleSetupPanel" class="role-setup-panel hidden">
+            <div class="section-title">
+              <div>
+                <h3>Automatic role assignment</h3>
+                <p class="muted">Map parent and kid Google accounts so roles are assigned automatically after login.</p>
+              </div>
+            </div>
+
+            <form id="roleSetupForm" class="role-setup-form">
+              <label>
+                Parent/Admin emails
+                <textarea id="parentEmailsInput" rows="3" placeholder="One email per line or comma separated, e.g. elad@gmail.com, maayan@gmail.com"></textarea>
+              </label>
+
+              <label>
+                Kid email to child mapping
+                <textarea id="kidMappingsInput" rows="5" placeholder="Format: kid-email@gmail.com = Child Name&#10;Example: maya@gmail.com = Maya"></textarea>
+              </label>
+
+              <label>
+                Default role for unknown new members
+                <select id="defaultRoleSelect">
+                  <option value="viewer">viewer</option>
+                  <option value="kid">kid</option>
+                  <option value="parent">parent</option>
+                </select>
+              </label>
+
+              <div class="button-row">
+                <button type="submit">Save role rules</button>
+                <button id="applyRoleRulesBtn" type="button" class="secondary">Re-apply role rules now</button>
+              </div>
+            </form>
+
+            <div id="roleRulesSummary" class="role-rules-summary"></div>
+            <p class="muted small-note">Recommended default for unknown users is <strong>viewer</strong>. Family owner is always treated as owner.</p>
+          </div>
+
           <div id="adminControls" class="admin-controls hidden">
             <div class="section-title">
               <div>

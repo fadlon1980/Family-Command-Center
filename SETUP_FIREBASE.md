@@ -1,30 +1,38 @@
-# V4.8.2 Setup Notes
+# V4.8.4 Setup Notes
 
 No Firestore rule change is required.
-
-This version is a reliability fix for the Google Calendar buttons.
 
 ## After upload
 
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-2
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-4
 ```
 
-Then go to:
+Then:
 
-Calendar → Connect Google Calendar
+1. Sign in as owner/admin.
+2. Go to Settings.
+3. Open Automatic role assignment.
+4. Add parent/admin emails.
+5. Add kid email → child name mappings.
+6. Keep unknown default role as `viewer`.
+7. Click Save role rules.
+8. Ask kids to refresh or log in again.
 
-You should see immediate feedback in the Google Calendar status area.
+## Format examples
 
-## If it still does nothing
+Parent/Admin emails:
 
-You are probably still loading an older cached app version.
+```text
+elad@gmail.com
+maayan@gmail.com
+```
 
-Try:
+Kid mapping:
 
-1. Incognito/InPrivate window
-2. Clear site data for `fadlon1980.github.io`
-3. Remove and reinstall the PWA icon
-4. Confirm GitHub has the V4.8.2 `app.js` and `index.html`
+```text
+kid1@gmail.com = Maya
+kid2@gmail.com = Daniel
+```

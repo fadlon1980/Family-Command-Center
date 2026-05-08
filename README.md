@@ -1,39 +1,60 @@
-# Family Command Center PWA V4.8.2 — Calendar Button Reliability Fix
+# Family Command Center PWA V4.8.4 — Automatic Role Assignment
 
-This update keeps stable storage keys from V4.8.1 and adds a stronger backup click handler for Google Calendar buttons.
+This version adds automatic role assignment based on email mappings in Settings.
 
-## Fixed in V4.8.2
+## New in V4.8.4
 
-- Connect Google Calendar button now has:
-  - normal JavaScript event handler
-  - document-level backup handler
-  - inline backup handler
-- The app should show visible feedback immediately after clicking.
-- Calendar-related JavaScript errors are shown in the Calendar status area.
-- Refresh calendar and Save selected calendar buttons also have backup handlers.
+- New Settings panel: **Automatic role assignment**
+- Parent/Admin emails list
+- Kid email → child name mapping
+- Default role for unknown new members
+- Button to re-apply role rules to current members
+- Auto role assignment after Google login / family space connection
 
-## Open after upload
+## Recommended setup
 
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-2
-```
+In Settings → Automatic role assignment:
 
-## Expected behavior
-
-When you click **Connect Google Calendar**, you should immediately see:
+### Parent/Admin emails
 
 ```text
-Connect Google Calendar button clicked. Opening Google permission window...
+elad@gmail.com
+maayan@gmail.com
 ```
 
-Then a Google popup should open.
+### Kid mappings
 
-## If no popup opens
+```text
+kid1@gmail.com = Maya
+kid2@gmail.com = Daniel
+kid3@gmail.com = Noam
+```
 
-1. Allow popups for `fadlon1980.github.io`.
-2. Test in Chrome, not inside an in-app browser.
-3. Try Incognito to bypass old PWA cache.
-4. Confirm Google Calendar API is enabled in Google Cloud.
-5. Confirm API key website restrictions include:
-   - `https://fadlon1980.github.io/*`
-   - `https://fadlon1980.github.io/Family-Command-Center/*`
+### Default unknown role
+
+Recommended:
+
+```text
+viewer
+```
+
+## Assignment logic
+
+```text
+Family creator → owner
+Email in parent list → parent
+Email in kid mapping → kid + linked child
+Unknown email → default role, recommended viewer
+```
+
+## Important
+
+This keeps the stable storage keys from V4.8.1 and the Calendar fixes from V4.8.3.
+
+No Firestore rules change is required.
+
+## Test URL
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-4
+```
