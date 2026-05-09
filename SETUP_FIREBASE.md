@@ -1,17 +1,20 @@
-# V4.8.6 Setup Notes
+# V4.8.7 Setup Notes
 
 No Firestore rules change is required.
-
-This is a Google login reliability hotfix.
 
 After upload, open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-6
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-7
 ```
 
-Then go to:
+Then test:
 
-Settings → Sign in with Google
+1. Go to Settings.
+2. Sign in with Google.
+3. Wait 3–5 seconds.
+4. Confirm the status changes from checking/loading to either:
+   - Cloud sync active
+   - or a clear instruction to create/join a family space
 
-You should see immediate feedback in the Cloud sync status box.
+If it asks you to join, enter your existing Family ID and Invite Code once.

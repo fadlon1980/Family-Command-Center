@@ -1,40 +1,40 @@
-# Family Command Center PWA V4.8.6 — Google Login Reliability Fix
+# Family Command Center PWA V4.8.7 — Family Space Loading Fix
 
-This hotfix addresses the issue where clicking Google sign-in appears to do nothing.
+This hotfix fixes the issue where the app stays on:
 
-## Fixed in V4.8.6
+```text
+Signed in as ... Loading family space...
+```
 
-- Added inline fallback click handler for **Sign in with Google**
-- Added delegated backup click handler for Google sign-in
-- Added visible status message immediately after clicking sign-in
-- Added Firebase browser-local persistence to better remember login
-- Added backup handlers for Email/Password sign-in and account creation
-- Kept stable local storage keys from V4.8.1
+## Fixed in V4.8.7
+
+- After Google login, the app actively checks for your family space.
+- It tries:
+  1. Saved local family ID
+  2. Firestore user profile `users/{uid}.currentFamilyId`
+- If a family space is found, it reconnects immediately.
+- If no family space is found, it clearly tells you to create or join a family space.
+- The old “Loading family space...” message no longer stays forever.
+- Stable storage keys are preserved.
 
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-6
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-7
 ```
 
-## Expected behavior
+## Expected result
 
-When you click **Sign in with Google**, you should immediately see:
+After Google sign-in, you should see either:
 
 ```text
-Google sign-in button clicked. Opening Google sign-in window...
+Cloud sync active for fadlon1980@gmail.com. Family ID: FAM-...
 ```
 
-Then the Google popup should open.
+or:
 
-## If no popup opens
-
-1. Allow popups for `fadlon1980.github.io`.
-2. Test in Chrome or Edge, not inside an in-app browser.
-3. Try Incognito once to confirm it is not old PWA cache.
-4. Clear site data for `fadlon1980.github.io`.
-5. Confirm API key restrictions still allow:
-   - `https://fadlon1980.github.io/*`
-   - `https://fadlon1980.github.io/Family-Command-Center/*`
+```text
+Signed in as fadlon1980@gmail.com. No family space auto-loaded. Use Create shared family space or Join existing family space below.
+```
 
 No Firestore rules change is required.

@@ -2201,6 +2201,8 @@ function renderCloudPanel() {
     setCloudStatus("Firebase is ready. Please sign in with Google or create/sign into an account.", "warn");
   } else if (cloud.ready && cloud.familyId) {
     setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${cloud.familyId}`, "good");
+  } else if (cloud.user && cloud.familyId && !cloud.ready) {
+    setCloudStatus(`Signed in as ${cloud.user.email || "user"}. Connecting to family space ${cloud.familyId}...`, "warn");
   } else {
     setCloudStatus(`Signed in as ${cloud.user.email || "user"}. Looking for your family space, or create/join one to start syncing.`, "warn");
   }
@@ -2416,6 +2418,7 @@ async function ensureFirebase() {
     }
 
     renderCloudPanel();
+    scheduleFamilySpaceStatusCheck();
 
     try {
       const savedFamilyId = getStoredFamilyId();
@@ -2475,13 +2478,78 @@ async function saveUserCurrentFamily(familyId, role = "member") {
   }, { merge: true });
 }
 
+
+async function recoverFamilySpaceAfterLogin() {
+  await ensureFirebase();
+
+  if (!cloud.user) {
+    setCloudStatus("Signed in state is not ready yet. Please wait a moment and refresh if needed.", "warn");
+    return false;
+  }
+
+  const candidates = [];
+
+  const stored = getStoredFamilyId();
+  if (stored) candidates.push(stored);
+
+  try {
+    const profileFamilyId = await getUserCurrentFamilyId();
+    if (profileFamilyId) candidates.push(profileFamilyId);
+  } catch (error) {
+    cloud.lastError = error.message;
+    // Do not stop here. Local saved family id may still work.
+  }
+
+  const uniqueCandidates = [...new Set(candidates.map(id => String(id || "").trim().toUpperCase()).filter(Boolean))];
+
+  for (const familyId of uniqueCandidates) {
+    try {
+      setCloudStatus(`Signed in as ${cloud.user.email || "user"}. Connecting to family space ${familyId}...`, "warn");
+      await connectFamily(familyId);
+      renderCloudPanel();
+      return true;
+    } catch (error) {
+      cloud.lastError = error.message;
+    }
+  }
+
+  setCloudStatus(`Signed in as ${cloud.user.email || "user"}. No family space auto-loaded. Use Create shared family space or Join existing family space below.`, "warn");
+  renderCloudPanel();
+  return false;
+}
+
+function scheduleFamilySpaceStatusCheck() {
+  setTimeout(async () => {
+    if (cloud.ready && cloud.familyId) {
+      renderCloudPanel();
+      return;
+    }
+
+    if (cloud.user) {
+      await recoverFamilySpaceAfterLogin().catch(error => {
+        setCloudStatus(`Signed in, but family space loading failed: ${error.message}`, "bad");
+      });
+    }
+  }, 1200);
+}
+
+
 async function signInWithGoogle() {
   setCloudStatus("Opening Google sign-in window. If nothing appears, check if the browser blocked a popup.", "warn");
   await ensureFirebase();
+
   const provider = new cloud.fb.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
+
   const result = await cloud.fb.signInWithPopup(cloud.auth, provider);
-  setCloudStatus(`Signed in as ${result.user?.email || "Google user"}. Loading family space...`, "good");
+  cloud.user = result.user;
+
+  setCloudStatus(`Signed in as ${result.user?.email || "Google user"}. Checking family space...`, "warn");
+
+  const recovered = await recoverFamilySpaceAfterLogin();
+  if (!recovered) {
+    scheduleFamilySpaceStatusCheck();
+  }
 }
 
 async function signUpWithEmail(email, password) {
