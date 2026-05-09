@@ -2761,7 +2761,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.14";
+const APP_VERSION = "4.8.15";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3343,8 +3343,29 @@ function stopSyncWatchdog() {
   cloud.syncWatchdogTimer = null;
 }
 
+
+async function repairFixedOwnerRoleNow() {
+  try {
+    if (!isCurrentFixedFamilyOwner()) {
+      alert("This button is only for the fixed owner emails.");
+      return;
+    }
+
+    await ensureCloudConnection("repair fixed owner role");
+    await ensureFixedOwnerMemberRole();
+    await pullLatestFromCloud().catch(() => {});
+    setCloudStep(`Owner role repaired for ${cloud.user.email}.`, "good");
+    alert(`Owner role repaired for ${cloud.user.email}. Please refresh once if the role display does not update immediately.`);
+  } catch (error) {
+    addDiagnostic("Repair fixed owner role", error, "bad");
+    alert(`Could not repair owner role: ${error.message}`);
+  }
+}
+
+
 function wireSyncHealthControls() {
   document.getElementById("forceSyncNowBtn")?.addEventListener("click", forceSyncNow);
+  document.getElementById("repairFixedOwnerBtn")?.addEventListener("click", repairFixedOwnerRoleNow);
   document.getElementById("pullLatestBtn")?.addEventListener("click", async () => {
     try {
       await pullLatestFromCloud();

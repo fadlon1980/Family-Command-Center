@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.14",
+  "name": "Family Command Center V4.8.15",
   "short_name": "Family Hub",
-  "description": "Fixed owner emails for Elad and Maayan plus owner/admin Firestore role management.",
+  "description": "Fixed owner emails enforced in Firestore rules, with repair owner role button.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

@@ -1,15 +1,15 @@
-# V4.8.14 Setup Notes
+# V4.8.15 Setup Notes
 
-This version should use the updated Firestore rules included in this package.
+This version requires publishing the included Firestore rules.
 
 ## Step 1 — Upload files to GitHub
 
-Upload all V4.8.14 files.
+Upload all files from this package.
 
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-14
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-15
 ```
 
 ## Step 2 — Publish Firestore rules
@@ -26,26 +26,19 @@ Paste the full content from:
 firestore.rules
 ```
 
-Click Publish.
+Click **Publish** and wait 1 minute.
 
-## Step 3 — Confirm owner emails
+## Step 3 — Repair Maayan role
 
-The app hard-codes these as owners:
+On Maayan device/account:
+
+1. Sign in with `fadlonmay@gmail.com`
+2. Go to Settings
+3. Click **Repair owner role**
+4. Refresh once if needed
+
+Expected:
 
 ```text
-fadlon1980@gmail.com
-fadlonmay@gmail.com
+Maayan role = owner
 ```
-
-Both should be treated as owners in the app.
-
-## Step 4 — If Maayan still shows viewer
-
-From Elad account:
-
-1. Go to Settings → Family members.
-2. Set Maayan role to `owner`.
-3. Click Sync now.
-4. Ask Maayan to refresh or open `?version=4-8-14`.
-
-The app should keep her as owner after that.

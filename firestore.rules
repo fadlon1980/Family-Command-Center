@@ -1,14 +1,24 @@
 rules_version = '2';
 
-// V4.8.14 rules: original creator OR a member with role owner/admin can manage family.
-// The app also hard-codes these emails as owner in the UI:
-// fadlon1980@gmail.com and fadlonmay@gmail.com.
-// Firestore rules cannot safely check email alone, so they use the member role stored in Firestore.
+// V4.8.15 rules: fixed owner emails are recognized by Firestore rules too.
+// This lets Maayan repair/promote her own member record even if it currently says viewer.
+// Fixed owner emails:
+// - fadlon1980@gmail.com
+// - fadlonmay@gmail.com
 
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
       return request.auth != null;
+    }
+
+    function isFixedOwnerEmail() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && (
+          request.auth.token.email == "fadlon1980@gmail.com"
+          || request.auth.token.email == "fadlonmay@gmail.com"
+        );
     }
 
     function memberDoc(familyId) {
@@ -25,15 +35,18 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/families/$(familyId)).data.createdBy == request.auth.uid;
     }
 
+    function isRoleOwnerOrAdmin(familyId) {
+      return isMember(familyId)
+        && (
+          memberDoc(familyId).data.role == "owner"
+          || memberDoc(familyId).data.role == "admin"
+        );
+    }
+
     function isFamilyManager(familyId) {
       return isOriginalCreator(familyId)
-        || (
-          isMember(familyId)
-          && (
-            memberDoc(familyId).data.role == "owner"
-            || memberDoc(familyId).data.role == "admin"
-          )
-        );
+        || isFixedOwnerEmail()
+        || isRoleOwnerOrAdmin(familyId);
     }
 
     match /users/{uid} {
@@ -44,17 +57,19 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid;
 
-      allow read: if isMember(familyId) || isOriginalCreator(familyId);
-      allow update: if isMember(familyId) || isOriginalCreator(familyId);
+      allow read: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
+      allow update: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
       allow delete: if false;
 
       match /members/{uid} {
         allow read: if isMember(familyId)
           || isOriginalCreator(familyId)
+          || isFixedOwnerEmail()
           || (signedIn() && request.auth.uid == uid);
 
         // Join/repair:
-        // - original creator can repair/create their member record
+        // - original creator can repair/create member records
+        // - fixed owner emails can repair/create member records
         // - family manager can manage members
         // - user can create own member if they know invite code
         allow create: if signedIn()
@@ -64,13 +79,14 @@ service cloud.firestore {
               request.auth.uid == uid
               && (
                 isOriginalCreator(familyId)
+                || isFixedOwnerEmail()
                 || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
               )
             )
           );
 
-        // User may update their own presence/profile fields.
-        // Family manager may update roles and member records.
+        // Family manager or fixed owner may update member roles.
+        // A normal user may update own profile/presence only if role does not change.
         allow update: if isFamilyManager(familyId)
           || (
             signedIn()
@@ -82,7 +98,7 @@ service cloud.firestore {
       }
 
       match /state/{docId} {
-        allow read, write: if isMember(familyId) || isOriginalCreator(familyId);
+        allow read, write: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
       }
     }
   }
