@@ -2376,6 +2376,8 @@ async function ensureFirebase() {
     signInWithEmailAndPassword: authMod.signInWithEmailAndPassword,
     GoogleAuthProvider: authMod.GoogleAuthProvider,
     signInWithPopup: authMod.signInWithPopup,
+    setPersistence: authMod.setPersistence,
+    browserLocalPersistence: authMod.browserLocalPersistence,
     signOut: authMod.signOut,
     getFirestore: fsMod.getFirestore,
     doc: fsMod.doc,
@@ -2389,6 +2391,9 @@ async function ensureFirebase() {
   cloud.app = cloud.fb.initializeApp(window.FAMILY_FIREBASE_CONFIG);
   cloud.auth = cloud.fb.getAuth(cloud.app);
   cloud.db = cloud.fb.getFirestore(cloud.app);
+  if (cloud.fb.setPersistence && cloud.fb.browserLocalPersistence) {
+    await cloud.fb.setPersistence(cloud.auth, cloud.fb.browserLocalPersistence);
+  }
   cloud.initialized = true;
 
   cloud.fb.onAuthStateChanged(cloud.auth, async user => {
@@ -2471,10 +2476,12 @@ async function saveUserCurrentFamily(familyId, role = "member") {
 }
 
 async function signInWithGoogle() {
+  setCloudStatus("Opening Google sign-in window. If nothing appears, check if the browser blocked a popup.", "warn");
   await ensureFirebase();
   const provider = new cloud.fb.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
-  await cloud.fb.signInWithPopup(cloud.auth, provider);
+  const result = await cloud.fb.signInWithPopup(cloud.auth, provider);
+  setCloudStatus(`Signed in as ${result.user?.email || "Google user"}. Loading family space...`, "good");
 }
 
 async function signUpWithEmail(email, password) {
@@ -2795,7 +2802,100 @@ function wireGoogleCalendarControls() {
   });
 }
 
+
+function authButtonDebug(message, level = "warn") {
+  try {
+    setCloudStatus(message, level);
+  } catch {
+    alert(message);
+  }
+}
+
+window.__fccGoogleSignInClick = async function(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  authButtonDebug("Google sign-in button clicked. Opening Google sign-in window...", "warn");
+
+  try {
+    await signInWithGoogle();
+  } catch (error) {
+    let message = error.message || String(error);
+
+    if (message.includes("popup") || message.includes("closed-by-user")) {
+      message = "Google sign-in popup was blocked or closed. Allow popups for this site and try again.";
+    }
+
+    if (message.includes("requests-from-referer") || message.includes("API key")) {
+      message = "Google blocked sign-in because the API key website restriction does not allow this GitHub Pages URL. Add https://fadlon1980.github.io/* and https://fadlon1980.github.io/Family-Command-Center/* to the API key website restrictions.";
+    }
+
+    authButtonDebug(`Google sign-in failed: ${message}`, "bad");
+  }
+};
+
+window.__fccEmailSignInClick = async function(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  try {
+    await signInWithEmail(
+      document.getElementById("authEmail").value.trim(),
+      document.getElementById("authPassword").value
+    );
+  } catch (error) {
+    authButtonDebug(`Sign-in failed: ${error.message || error}`, "bad");
+  }
+};
+
+window.__fccEmailSignupClick = async function(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  try {
+    await signUpWithEmail(
+      document.getElementById("authEmail").value.trim(),
+      document.getElementById("authPassword").value
+    );
+  } catch (error) {
+    authButtonDebug(`Account creation failed: ${error.message || error}`, "bad");
+  }
+};
+
+function wireAuthControlsBackupDelegation() {
+  if (window.__fccAuthDelegationWired) return;
+  window.__fccAuthDelegationWired = true;
+
+  document.addEventListener("click", async event => {
+    const google = event.target.closest("#googleSignInBtn");
+    if (google) {
+      await window.__fccGoogleSignInClick(event);
+      return;
+    }
+
+    const login = event.target.closest("#loginBtn");
+    if (login) {
+      await window.__fccEmailSignInClick(event);
+      return;
+    }
+
+    const signup = event.target.closest("#signupBtn");
+    if (signup) {
+      await window.__fccEmailSignupClick(event);
+      return;
+    }
+  }, true);
+}
+
+
 function wireCloudControls() {
+  wireAuthControlsBackupDelegation();
   const googleSignInBtn = document.getElementById("googleSignInBtn");
   const loginBtn = document.getElementById("loginBtn");
   const signupBtn = document.getElementById("signupBtn");
@@ -2803,35 +2903,11 @@ function wireCloudControls() {
   const createFamilyBtn = document.getElementById("createFamilyBtn");
   const joinForm = document.getElementById("joinFamilyForm");
 
-  googleSignInBtn?.addEventListener("click", async () => {
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      setCloudStatus(`Google sign-in failed: ${error.message}`, "bad");
-    }
-  });
+  googleSignInBtn?.addEventListener("click", window.__fccGoogleSignInClick);
 
-  loginBtn?.addEventListener("click", async () => {
-    try {
-      await signInWithEmail(
-        document.getElementById("authEmail").value.trim(),
-        document.getElementById("authPassword").value
-      );
-    } catch (error) {
-      setCloudStatus(`Sign-in failed: ${error.message}`, "bad");
-    }
-  });
+  loginBtn?.addEventListener("click", window.__fccEmailSignInClick);
 
-  signupBtn?.addEventListener("click", async () => {
-    try {
-      await signUpWithEmail(
-        document.getElementById("authEmail").value.trim(),
-        document.getElementById("authPassword").value
-      );
-    } catch (error) {
-      setCloudStatus(`Account creation failed: ${error.message}`, "bad");
-    }
-  });
+  signupBtn?.addEventListener("click", window.__fccEmailSignupClick);
 
   logoutBtn?.addEventListener("click", async () => {
     try {
@@ -2879,6 +2955,7 @@ window.addEventListener("load", async () => {
 
 
 
+wireAuthControlsBackupDelegation();
 wireCalendarControlsBackupDelegation();
 render();
 
@@ -2957,3 +3034,11 @@ document.getElementById("choreForm")?.addEventListener("submit",e=>{e.preventDef
 document.getElementById("notifyBtn")?.addEventListener("click",v48Notify);
 v48EnsureArrays(); render();
 /* ===== End V4.8 Add-on ===== */
+
+
+window.addEventListener("unhandledrejection", event => {
+  const msg = event?.reason?.message || String(event?.reason || "");
+  if (/auth|firebase|popup|google|login|sign-in/i.test(msg)) {
+    authButtonDebug(`Auth/login error: ${msg}`, "bad");
+  }
+});

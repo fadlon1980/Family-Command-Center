@@ -1,31 +1,40 @@
-# Family Command Center PWA V4.8.5 — Owner Role Setup Visibility Hotfix
+# Family Command Center PWA V4.8.6 — Google Login Reliability Fix
 
-This hotfix makes the **Automatic role assignment** section visible for the family owner.
+This hotfix addresses the issue where clicking Google sign-in appears to do nothing.
 
-## Fixed in V4.8.5
+## Fixed in V4.8.6
 
-- Owner can see Automatic role assignment.
-- Admins can see Automatic role assignment.
-- Emails listed in `FAMILY_ADMIN_EMAILS` can see Automatic role assignment.
-- The Settings panel now shows your signed-in email and detected role in the role rules summary.
-- The role setup renderer is called directly after each render and after family members load.
+- Added inline fallback click handler for **Sign in with Google**
+- Added delegated backup click handler for Google sign-in
+- Added visible status message immediately after clicking sign-in
+- Added Firebase browser-local persistence to better remember login
+- Added backup handlers for Email/Password sign-in and account creation
+- Kept stable local storage keys from V4.8.1
 
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-5
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-6
 ```
 
-## What you should see
+## Expected behavior
 
-Settings → Automatic role assignment
+When you click **Sign in with Google**, you should immediately see:
 
-Fields:
+```text
+Google sign-in button clicked. Opening Google sign-in window...
+```
 
-- Parent/Admin emails
-- Kid email to child mapping
-- Default role for unknown users
-- Save role rules
-- Re-apply role rules now
+Then the Google popup should open.
+
+## If no popup opens
+
+1. Allow popups for `fadlon1980.github.io`.
+2. Test in Chrome or Edge, not inside an in-app browser.
+3. Try Incognito once to confirm it is not old PWA cache.
+4. Clear site data for `fadlon1980.github.io`.
+5. Confirm API key restrictions still allow:
+   - `https://fadlon1980.github.io/*`
+   - `https://fadlon1980.github.io/Family-Command-Center/*`
 
 No Firestore rules change is required.

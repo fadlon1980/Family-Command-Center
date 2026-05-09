@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V4.8.5</title>
+  <title>Family Command Center V4.8.6</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -666,11 +666,11 @@
                 <form id="authForm" class="stack-form">
                   <input id="authEmail" type="email" placeholder="Email" autocomplete="email" />
                   <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" />
-                  <button type="button" id="googleSignInBtn" class="google-btn">Sign in with Google</button>
+                  <button type="button" id="googleSignInBtn" class="google-btn" onclick="window.__fccGoogleSignInClick && window.__fccGoogleSignInClick(event)">Sign in with Google</button>
                   <div class="divider"><span>or use email/password</span></div>
                   <div class="button-row">
-                    <button type="button" id="loginBtn">Sign in</button>
-                    <button type="button" id="signupBtn" class="secondary">Create account</button>
+                    <button type="button" id="loginBtn" onclick="window.__fccEmailSignInClick && window.__fccEmailSignInClick(event)">Sign in</button>
+                    <button type="button" id="signupBtn" class="secondary" onclick="window.__fccEmailSignupClick && window.__fccEmailSignupClick(event)">Create account</button>
                     <button type="button" id="logoutBtn" class="ghost hidden">Sign out</button>
                   </div>
                 </form>

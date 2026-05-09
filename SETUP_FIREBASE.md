@@ -1,18 +1,17 @@
-# V4.8.5 Setup Notes
+# V4.8.6 Setup Notes
 
-No Firestore rule change is required.
+No Firestore rules change is required.
+
+This is a Google login reliability hotfix.
 
 After upload, open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-5
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-6
 ```
 
-Then:
+Then go to:
 
-1. Sign in as the family owner.
-2. Go to Settings.
-3. Confirm Automatic role assignment is visible.
-4. Add parent/admin emails.
-5. Add kid email to child mappings.
-6. Save role rules.
+Settings → Sign in with Google
+
+You should see immediate feedback in the Cloud sync status box.
