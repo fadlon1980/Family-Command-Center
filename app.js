@@ -327,6 +327,10 @@ let cloud = {
   syncWatchdogTimer: null,
   connectionAttempting: false,
   pendingLocalChanges: false,
+  syncInProgress: false,
+  saveInProgress: false,
+  lastSyncStartedAt: "",
+  lastSyncDurationMs: 0,
   hasLoadedRemote: false,
   lastRemoteAt: "",
   lastCloudSaveAt: "",
@@ -2761,7 +2765,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.15";
+const APP_VERSION = "4.8.16";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3007,8 +3011,24 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
 
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
+    const incomingData = normalizeState(snap.data().data);
+
+    if (isRemoteStateSame(incomingData)) {
+      cloud.ready = true;
+      cloud.hasLoadedRemote = true;
+      cloud.lastRemoteAt = new Date().toISOString();
+      renderSyncHealth();
+      return;
+    }
+
+    if (cloud.pendingLocalChanges && !cloud.applyingRemote) {
+      cloud.lastRemoteAt = new Date().toISOString();
+      renderSyncHealth();
+      return;
+    }
+
     cloud.applyingRemote = true;
-    state = normalizeState(snap.data().data);
+    state = incomingData;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.applyingRemote = false;
     cloud.ready = true;
@@ -3183,6 +3203,48 @@ async function timedStep(label, promise, ms = 9000) {
 
 
 
+
+function setButtonBusy(id, busy, busyText = "Working...") {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+
+  if (busy) {
+    if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
+    btn.textContent = busyText;
+    btn.disabled = true;
+  } else {
+    btn.textContent = btn.dataset.originalText || btn.textContent;
+    btn.disabled = false;
+    delete btn.dataset.originalText;
+  }
+}
+
+function stateSummaryForDiagnostics() {
+  try {
+    return {
+      tasks: state.tasks?.length || 0,
+      events: state.events?.length || 0,
+      payments: state.payments?.length || 0,
+      shopping: state.shopping?.length || 0,
+      schoolItems: state.schoolItems?.length || 0,
+      chores: state.chores?.length || 0,
+      equipmentChecklists: state.equipmentChecklists?.length || 0,
+      bytes: new Blob([JSON.stringify(state)]).size
+    };
+  } catch {
+    return { bytes: 0 };
+  }
+}
+
+function isRemoteStateSame(incomingData) {
+  try {
+    return JSON.stringify(incomingData) === JSON.stringify(state);
+  } catch {
+    return false;
+  }
+}
+
+
 function renderSyncHealth() {
   const el = document.getElementById("syncHealthSummary");
   if (!el) return;
@@ -3209,9 +3271,11 @@ function renderSyncHealth() {
 
   const parts = [
     `Connected to ${cloud.familyId}`,
+    cloud.syncInProgress ? "sync in progress..." : "sync idle",
     cloud.lastRemoteAt ? `last cloud update received: ${new Date(cloud.lastRemoteAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "waiting for cloud updates",
-    cloud.lastCloudSaveAt ? `last save from this device: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "no save from this device yet"
-  ];
+    cloud.lastCloudSaveAt ? `last save from this device: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "no save from this device yet",
+    cloud.lastSyncDurationMs ? `last sync took ${Math.round(cloud.lastSyncDurationMs)} ms` : ""
+  ].filter(Boolean);
 
   if (cloud.pendingLocalChanges) parts.push("local changes waiting to save");
 
@@ -3219,62 +3283,91 @@ function renderSyncHealth() {
 }
 
 async function pullLatestFromCloud() {
-  await ensureFirebase();
+  setButtonBusy("pullLatestBtn", true, "Pulling...");
+  try {
+    await ensureFirebase();
 
-  const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-  if (!cloud.user || !familyId) {
-    setCloudStep("Cannot pull latest: sign in and connect to a family space first.", "warn");
+    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+    if (!cloud.user || !familyId) {
+      setCloudStep("Cannot pull latest: sign in and connect to a family space first.", "warn");
+      renderSyncHealth();
+      return false;
+    }
+
+    const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+    const snap = await withTimeout(cloud.fb.getDoc(stateRef), 10000, "Pull latest from cloud timed out.");
+
+    if (!snap.exists() || !snap.data()?.data) {
+      setCloudStep("Could not pull latest: shared family data document is missing.", "bad");
+      renderSyncHealth();
+      return false;
+    }
+
+    cloud.applyingRemote = true;
+    state = normalizeState(snap.data().data);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    cloud.applyingRemote = false;
+
+    cloud.familyId = familyId;
+    cloud.stateRef = stateRef;
+    cloud.ready = true;
+    cloud.hasLoadedRemote = true;
+    cloud.lastRemoteAt = new Date().toISOString();
+    cloud.pendingLocalChanges = false;
+
+    setCloudStep(`Pulled latest cloud data for ${familyId}.`, "good");
+    render();
     renderSyncHealth();
-    return false;
+    return true;
+  } finally {
+    setButtonBusy("pullLatestBtn", false);
   }
-
-  const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
-  const snap = await withTimeout(cloud.fb.getDoc(stateRef), 10000, "Pull latest from cloud timed out.");
-
-  if (!snap.exists() || !snap.data()?.data) {
-    setCloudStep("Could not pull latest: shared family data document is missing.", "bad");
-    renderSyncHealth();
-    return false;
-  }
-
-  cloud.applyingRemote = true;
-  state = normalizeState(snap.data().data);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  cloud.applyingRemote = false;
-
-  cloud.familyId = familyId;
-  cloud.stateRef = stateRef;
-  cloud.ready = true;
-  cloud.hasLoadedRemote = true;
-  cloud.lastRemoteAt = new Date().toISOString();
-  cloud.pendingLocalChanges = false;
-
-  setCloudStep(`Pulled latest cloud data for ${familyId}.`, "good");
-  render();
-  renderSyncHealth();
-  return true;
 }
 
 async function forceSyncNow() {
-  await ensureFirebase();
-
-  if (!cloud.user) {
-    setCloudStep("Cannot sync: sign in first.", "warn");
-    renderSyncHealth();
+  if (cloud.syncInProgress) {
+    setCloudStep("Sync is already running. Please wait a moment.", "warn");
     return;
   }
 
-  if (!cloud.ready || !cloud.stateRef) {
-    const ok = await ensureCloudConnection("manual sync");
-    if (!ok) return;
-  }
-
-  await saveCloudNow(true);
+  setButtonBusy("forceSyncNowBtn", true, "Syncing...");
+  cloud.syncInProgress = true;
+  cloud.lastSyncStartedAt = new Date().toISOString();
+  const started = performance.now();
   renderSyncHealth();
+
+  try {
+    await ensureFirebase();
+
+    if (!cloud.user) {
+      throw new Error("Cannot sync because you are not signed in.");
+    }
+
+    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+    if (!familyId) {
+      throw new Error("Cannot sync because no Family ID is connected.");
+    }
+
+    if (!cloud.ready || !cloud.stateRef) {
+      await activateCloudFromReadableData(familyId);
+    }
+
+    await saveCloudNow(true);
+    setCloudStep(`Sync completed successfully.`, "good");
+  } catch (error) {
+    addDiagnostic("Manual sync", error, "bad");
+    setCloudStep(`Sync failed: ${error.message || error}`, "bad");
+  } finally {
+    cloud.syncInProgress = false;
+    cloud.lastSyncDurationMs = performance.now() - started;
+    setButtonBusy("forceSyncNowBtn", false);
+    renderSyncHealth();
+  }
 }
 
+
 async function ensureCloudConnection(reason = "auto") {
-  if (cloud.connectionAttempting) return false;
+  if (cloud.connectionAttempting || cloud.syncInProgress || cloud.saveInProgress) return false;
   if (!cloud.user) return false;
 
   const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
@@ -3299,8 +3392,8 @@ async function ensureCloudConnection(reason = "auto") {
       await connectFamily(familyId);
     }
 
-    if (cloud.pendingLocalChanges) {
-      await saveCloudNow(true);
+    if (cloud.pendingLocalChanges && !cloud.syncInProgress && !cloud.saveInProgress) {
+      await saveCloudNow(false);
     }
 
     renderSyncHealth();
@@ -3335,7 +3428,7 @@ function startSyncWatchdog() {
     }
 
     renderSyncHealth();
-  }, 15000);
+  }, 60000);
 }
 
 function stopSyncWatchdog() {
@@ -3541,8 +3634,24 @@ async function connectFamily(familyId) {
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
 
+    const incomingData = normalizeState(snap.data().data);
+
+    if (isRemoteStateSame(incomingData)) {
+      cloud.ready = true;
+      cloud.hasLoadedRemote = true;
+      cloud.lastRemoteAt = new Date().toISOString();
+      renderSyncHealth();
+      return;
+    }
+
+    if (cloud.pendingLocalChanges && !cloud.applyingRemote) {
+      cloud.lastRemoteAt = new Date().toISOString();
+      renderSyncHealth();
+      return;
+    }
+
     cloud.applyingRemote = true;
-    state = normalizeState(snap.data().data);
+    state = incomingData;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.applyingRemote = false;
     cloud.ready = true;
@@ -3565,40 +3674,62 @@ function scheduleCloudSave() {
 
   if (!cloud.ready || !cloud.stateRef) {
     clearTimeout(cloud.saveTimer);
-    cloud.saveTimer = setTimeout(() => ensureCloudConnection("pending local save"), 900);
+    cloud.saveTimer = setTimeout(() => ensureCloudConnection("pending local save"), 1200);
     return;
   }
 
   clearTimeout(cloud.saveTimer);
-  cloud.saveTimer = setTimeout(() => saveCloudNow(false), 700);
+  cloud.saveTimer = setTimeout(() => saveCloudNow(false), 2500);
 }
 
 async function saveCloudNow(force = false) {
-  if (!cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
+  if (!cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return false;
+  if (!force && !cloud.pendingLocalChanges) return true;
 
-  if (!force && !cloud.pendingLocalChanges) return;
+  if (cloud.saveInProgress) {
+    setCloudStatus("A save is already in progress. Waiting for it to finish...", "warn");
+    return false;
+  }
+
+  cloud.saveInProgress = true;
+  const started = performance.now();
 
   try {
-    await cloud.fb.setDoc(cloud.stateRef, {
-      data: state,
-      updatedAt: cloud.fb.serverTimestamp(),
-      updatedBy: cloud.user.uid,
-      updatedByEmail: cloud.user.email || "",
-      clientUpdatedAt: new Date().toISOString()
-    }, { merge: true });
+    const summary = stateSummaryForDiagnostics();
+
+    await withTimeout(
+      cloud.fb.setDoc(cloud.stateRef, {
+        data: state,
+        updatedAt: cloud.fb.serverTimestamp(),
+        updatedBy: cloud.user.uid,
+        updatedByEmail: cloud.user.email || "",
+        clientUpdatedAt: new Date().toISOString(),
+        clientSummary: summary
+      }, { merge: true }),
+      10000,
+      "Saving shared family data to Firestore timed out."
+    );
 
     cloud.pendingLocalChanges = false;
     cloud.lastCloudSaveAt = new Date().toISOString();
+    cloud.lastSyncDurationMs = performance.now() - started;
     setCloudStatus(`Cloud sync active. Last save: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`, "good");
     renderSyncHealth();
+    return true;
   } catch (error) {
     cloud.lastError = error.message;
-    addDiagnostic("Cloud save", error, "bad");
+    addDiagnostic("Cloud save", error, "bad", {
+      title: "Cloud save failed or timed out",
+      cause: "The app tried to save your changes to Firestore but the save did not complete quickly.",
+      action: "Wait a few seconds and click Sync now again. If it repeats, run connection check and check your internet/Firebase rules."
+    });
     setCloudStatus(`Could not save to cloud: ${error.message}`, "bad");
     renderSyncHealth();
+    return false;
+  } finally {
+    cloud.saveInProgress = false;
   }
 }
-
 
 
 function calendarButtonDebug(message, level = "warn") {

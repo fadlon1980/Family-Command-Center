@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.15",
+  "name": "Family Command Center V4.8.16",
   "short_name": "Family Hub",
-  "description": "Fixed owner emails enforced in Firestore rules, with repair owner role button.",
+  "description": "Fast sync and anti-hang fix with safer Firestore saves and reduced render loops.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

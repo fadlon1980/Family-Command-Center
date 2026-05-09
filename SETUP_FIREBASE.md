@@ -1,44 +1,17 @@
-# V4.8.15 Setup Notes
+# V4.8.16 Setup Notes
 
-This version requires publishing the included Firestore rules.
+No Firestore rules change is required if V4.8.15 rules are already published.
 
-## Step 1 — Upload files to GitHub
-
-Upload all files from this package.
-
-Open:
+After upload, open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-15
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-16
 ```
 
-## Step 2 — Publish Firestore rules
-
-Firebase Console:
+Check:
 
 ```text
-Firestore Database → Rules
+Settings → Cloud sync health
 ```
 
-Paste the full content from:
-
-```text
-firestore.rules
-```
-
-Click **Publish** and wait 1 minute.
-
-## Step 3 — Repair Maayan role
-
-On Maayan device/account:
-
-1. Sign in with `fadlonmay@gmail.com`
-2. Go to Settings
-3. Click **Repair owner role**
-4. Refresh once if needed
-
-Expected:
-
-```text
-Maayan role = owner
-```
+If sync still feels slow, run diagnostics and copy the report.
