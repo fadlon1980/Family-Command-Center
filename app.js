@@ -15,6 +15,12 @@ const LEGACY_CLOUD_FAMILY_ID_KEYS = [
 ];
 const FIREBASE_SDK_VERSION = "12.13.0";
 
+const FIXED_FAMILY_OWNER_EMAILS = [
+  "fadlon1980@gmail.com",
+  "fadlonmay@gmail.com"
+];
+
+
 const LEGACY_STATE_KEYS = [
   "family-command-center-v4-8",
   "family-command-center-v4-7-2",
@@ -229,7 +235,13 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+  if (typeof cloud !== "undefined" && cloud && !cloud.applyingRemote) {
+    cloud.pendingLocalChanges = true;
+  }
+
   if (typeof scheduleCloudSave === "function") scheduleCloudSave();
+  if (typeof renderSyncHealth === "function") renderSyncHealth();
 }
 
 
@@ -312,6 +324,12 @@ let cloud = {
   members: [],
   heartbeatTimer: null,
   saveTimer: null,
+  syncWatchdogTimer: null,
+  connectionAttempting: false,
+  pendingLocalChanges: false,
+  hasLoadedRemote: false,
+  lastRemoteAt: "",
+  lastCloudSaveAt: "",
   applyingRemote: false,
   lastError: "",
   fb: null
@@ -488,6 +506,7 @@ function getFamilyCalendarConfig() {
 // These prevent calendar/admin code from failing if a role helper was missing after an update.
 function getCurrentRole() {
   if (!cloud || !cloud.user) return "guest";
+  if (isCurrentFixedFamilyOwner()) return "owner";
 
   const member = typeof getCurrentMemberRecord === "function" ? getCurrentMemberRecord() : null;
   const memberRole = String(member?.role || "").toLowerCase();
@@ -1854,6 +1873,16 @@ function setCloudStatus(message, level = "warn") {
 
 
 
+
+function isFixedFamilyOwnerEmail(email) {
+  return FIXED_FAMILY_OWNER_EMAILS.includes(String(email || "").trim().toLowerCase());
+}
+
+function isCurrentFixedFamilyOwner() {
+  return Boolean(cloud?.user?.email && isFixedFamilyOwnerEmail(cloud.user.email));
+}
+
+
 function normalizeEmailList(input) {
   if (Array.isArray(input)) {
     return input.map(email => String(email || "").trim().toLowerCase()).filter(Boolean);
@@ -1886,7 +1915,7 @@ function getRoleConfig() {
   const cfg = cloud.familyDoc?.roleConfig || {};
   const adminEmails = getConfiguredAdminEmails ? getConfiguredAdminEmails() : [];
   return {
-    parentEmails: normalizeEmailList(cfg.parentEmails || adminEmails),
+    parentEmails: [...new Set([...normalizeEmailList(cfg.parentEmails || adminEmails), ...FIXED_FAMILY_OWNER_EMAILS])],
     kidMappings: Array.isArray(cfg.kidMappings) ? cfg.kidMappings : [],
     defaultRole: cfg.defaultRole || "viewer"
   };
@@ -1895,6 +1924,10 @@ function getRoleConfig() {
 function roleForEmail(email, uid = "") {
   email = String(email || "").trim().toLowerCase();
   const cfg = getRoleConfig();
+
+  if (isFixedFamilyOwnerEmail(email)) {
+    return { role: "owner", childName: "" };
+  }
 
   if (cloud.familyDoc?.createdBy && uid && cloud.familyDoc.createdBy === uid) {
     return { role: "owner", childName: "" };
@@ -1965,6 +1998,7 @@ async function applyRoleRulesToAllMembers() {
 
 function isRoleSetupManager() {
   if (!cloud || !cloud.user) return false;
+  if (isCurrentFixedFamilyOwner()) return true;
 
   const email = String(cloud.user.email || "").toLowerCase();
   const adminEmails = typeof getConfiguredAdminEmails === "function" ? getConfiguredAdminEmails() : [];
@@ -2108,6 +2142,7 @@ function getCurrentMemberRecord() {
 
 function isFamilyAdminUser() {
   if (!cloud.user) return false;
+  if (isCurrentFixedFamilyOwner()) return true;
 
   const userEmail = String(cloud.user.email || "").toLowerCase();
   const configuredAdmins = getConfiguredAdminEmails();
@@ -2404,6 +2439,7 @@ async function ensureFirebase() {
     cloud.ready = false;
     if (!user) {
       stopPresenceHeartbeat();
+      if (typeof stopSyncWatchdog === "function") stopSyncWatchdog();
       if (cloud.unsubscribeState) cloud.unsubscribeState();
       if (cloud.unsubscribeMembers) cloud.unsubscribeMembers();
       if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
@@ -2419,6 +2455,7 @@ async function ensureFirebase() {
     }
 
     renderCloudPanel();
+    if (typeof startSyncWatchdog === "function") startSyncWatchdog();
     scheduleFamilySpaceStatusCheck();
 
     try {
@@ -2481,6 +2518,23 @@ async function saveUserCurrentFamily(familyId, role = "member") {
 
 
 
+
+async function ensureFixedOwnerMemberRole() {
+  if (!cloud.user || !cloud.familyId || !isCurrentFixedFamilyOwner() || !cloud.fb || !cloud.db) return;
+
+  const memberRef = cloud.fb.doc(cloud.db, "families", cloud.familyId, "members", cloud.user.uid);
+  await cloud.fb.setDoc(memberRef, {
+    email: cloud.user.email || "",
+    displayName: cloud.user.displayName || "",
+    photoURL: cloud.user.photoURL || "",
+    role: "owner",
+    childName: "",
+    fixedOwnerEmail: true,
+    fixedOwnerUpdatedAt: cloud.fb.serverTimestamp()
+  }, { merge: true });
+}
+
+
 async function ensureOwnerMemberRecord(familyId, familyData) {
   if (!cloud.user || !familyId || !familyData) return;
 
@@ -2512,6 +2566,24 @@ function withTimeout(promise, ms, message) {
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
+
+async function tryTimedOptionalStep(label, promise, ms = 4000) {
+  try {
+    await withTimeout(promise, ms, `${label} timed out.`);
+    addDiagnosticInfo(label, `${label} completed`, "Optional repair/update completed successfully.", "", "good");
+    return true;
+  } catch (error) {
+    cloud.lastError = error.message;
+    addDiagnostic(label, error, "warn", {
+      title: `${label} skipped`,
+      cause: "This optional write/update did not complete quickly, but the app can continue because the main family data is readable.",
+      action: "Continue using the app. If roles or family members look wrong, verify Firestore rules and member records later."
+    });
+    return false;
+  }
+}
+
+
 
 
 async function recoverFamilySpaceAfterLogin() {
@@ -2689,7 +2761,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.11";
+const APP_VERSION = "4.8.14";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -2748,6 +2820,10 @@ function friendlyErrorDetails(error, context = "App") {
     title = "Firebase configuration missing";
     cause = "The app could not find firebase-config.js or FAMILY_FIREBASE_CONFIG.";
     action = "Confirm firebase-config.js is uploaded to GitHub and contains window.FAMILY_FIREBASE_CONFIG.";
+  } else if (/owner\/member repair|user profile family mapping|member access/.test(text)) {
+    title = "Optional member/profile update is slow or blocked";
+    cause = "The app can read your family data, but an optional write to repair the member record or save your profile mapping did not finish quickly.";
+    action = "Use V4.8.12 or later. The app should continue loading. Later, verify your member record role is owner and Firestore rules are current.";
   } else if (/loading family|connecting to family/.test(text)) {
     title = "Family space did not finish loading";
     cause = "The app started connecting but did not complete all Firestore reads/listeners.";
@@ -2896,6 +2972,9 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
 
   cloud.ready = true;
   cloud.lastError = "";
+  ensureFixedOwnerMemberRole().catch(error => {
+    addDiagnostic("Fixed owner role write", error, "warn");
+  });
   setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
 
   // Start live listeners, but do not make the UI inactive if a listener has a delayed response.
@@ -2933,7 +3012,11 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.applyingRemote = false;
     cloud.ready = true;
+    cloud.hasLoadedRemote = true;
+    cloud.lastRemoteAt = new Date().toISOString();
+    cloud.pendingLocalChanges = false;
     render();
+    renderSyncHealth();
   }, error => {
     cloud.lastError = error.message;
     addDiagnostic("Shared state listener", error, "warn");
@@ -3099,6 +3182,185 @@ async function timedStep(label, promise, ms = 9000) {
 }
 
 
+
+function renderSyncHealth() {
+  const el = document.getElementById("syncHealthSummary");
+  if (!el) return;
+
+  el.className = "sync-health-summary";
+
+  if (!cloud.user) {
+    el.textContent = "Not signed in. Sign in with Google to enable cloud sync.";
+    el.classList.add("warn");
+    return;
+  }
+
+  if (!cloud.familyId && !getStoredFamilyId()) {
+    el.textContent = "Signed in, but no Family ID is connected yet.";
+    el.classList.add("warn");
+    return;
+  }
+
+  if (!cloud.ready) {
+    el.textContent = `Not actively synced yet. Family ID: ${cloud.familyId || getStoredFamilyId() || "unknown"}. The app will keep trying to reconnect automatically.`;
+    el.classList.add("bad");
+    return;
+  }
+
+  const parts = [
+    `Connected to ${cloud.familyId}`,
+    cloud.lastRemoteAt ? `last cloud update received: ${new Date(cloud.lastRemoteAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "waiting for cloud updates",
+    cloud.lastCloudSaveAt ? `last save from this device: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "no save from this device yet"
+  ];
+
+  if (cloud.pendingLocalChanges) parts.push("local changes waiting to save");
+
+  el.textContent = parts.join(" · ");
+}
+
+async function pullLatestFromCloud() {
+  await ensureFirebase();
+
+  const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+  if (!cloud.user || !familyId) {
+    setCloudStep("Cannot pull latest: sign in and connect to a family space first.", "warn");
+    renderSyncHealth();
+    return false;
+  }
+
+  const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+  const snap = await withTimeout(cloud.fb.getDoc(stateRef), 10000, "Pull latest from cloud timed out.");
+
+  if (!snap.exists() || !snap.data()?.data) {
+    setCloudStep("Could not pull latest: shared family data document is missing.", "bad");
+    renderSyncHealth();
+    return false;
+  }
+
+  cloud.applyingRemote = true;
+  state = normalizeState(snap.data().data);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  cloud.applyingRemote = false;
+
+  cloud.familyId = familyId;
+  cloud.stateRef = stateRef;
+  cloud.ready = true;
+  cloud.hasLoadedRemote = true;
+  cloud.lastRemoteAt = new Date().toISOString();
+  cloud.pendingLocalChanges = false;
+
+  setCloudStep(`Pulled latest cloud data for ${familyId}.`, "good");
+  render();
+  renderSyncHealth();
+  return true;
+}
+
+async function forceSyncNow() {
+  await ensureFirebase();
+
+  if (!cloud.user) {
+    setCloudStep("Cannot sync: sign in first.", "warn");
+    renderSyncHealth();
+    return;
+  }
+
+  if (!cloud.ready || !cloud.stateRef) {
+    const ok = await ensureCloudConnection("manual sync");
+    if (!ok) return;
+  }
+
+  await saveCloudNow(true);
+  renderSyncHealth();
+}
+
+async function ensureCloudConnection(reason = "auto") {
+  if (cloud.connectionAttempting) return false;
+  if (!cloud.user) return false;
+
+  const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+  if (!familyId) {
+    renderSyncHealth();
+    return false;
+  }
+
+  if (cloud.ready && cloud.stateRef && cloud.unsubscribeState) {
+    renderSyncHealth();
+    return true;
+  }
+
+  cloud.connectionAttempting = true;
+  try {
+    setCloudStep(`Auto reconnect (${reason}): connecting to family space ${familyId}...`, "warn");
+
+    // Prefer the direct activation path because diagnostics proved it is more reliable.
+    if (typeof activateCloudFromReadableData === "function") {
+      await activateCloudFromReadableData(familyId);
+    } else {
+      await connectFamily(familyId);
+    }
+
+    if (cloud.pendingLocalChanges) {
+      await saveCloudNow(true);
+    }
+
+    renderSyncHealth();
+    return true;
+  } catch (error) {
+    cloud.lastError = error.message;
+    addDiagnostic("Auto reconnect", error, "warn", {
+      title: "Auto reconnect did not complete",
+      cause: "The app tried to reconnect automatically but could not complete the cloud sync.",
+      action: "Run connection check and copy the diagnostic report if this repeats."
+    });
+    setCloudStep(`Auto reconnect failed: ${error.message}`, "bad");
+    renderSyncHealth();
+    return false;
+  } finally {
+    cloud.connectionAttempting = false;
+  }
+}
+
+function startSyncWatchdog() {
+  stopSyncWatchdog();
+  cloud.syncWatchdogTimer = setInterval(async () => {
+    if (!cloud.user) return;
+
+    if (!cloud.ready || !cloud.stateRef || !cloud.unsubscribeState) {
+      await ensureCloudConnection("watchdog");
+      return;
+    }
+
+    if (cloud.pendingLocalChanges) {
+      await saveCloudNow(true);
+    }
+
+    renderSyncHealth();
+  }, 15000);
+}
+
+function stopSyncWatchdog() {
+  if (cloud.syncWatchdogTimer) clearInterval(cloud.syncWatchdogTimer);
+  cloud.syncWatchdogTimer = null;
+}
+
+function wireSyncHealthControls() {
+  document.getElementById("forceSyncNowBtn")?.addEventListener("click", forceSyncNow);
+  document.getElementById("pullLatestBtn")?.addEventListener("click", async () => {
+    try {
+      await pullLatestFromCloud();
+    } catch (error) {
+      addDiagnostic("Pull latest", error, "bad");
+      setCloudStep(`Pull latest failed: ${error.message}`, "bad");
+    }
+  });
+}
+
+window.addEventListener("online", () => ensureCloudConnection("browser online"));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") ensureCloudConnection("app visible");
+});
+
+
 async function connectFamily(familyId) {
   await ensureFirebase();
   if (!cloud.user) throw new Error("Sign in first.");
@@ -3152,14 +3414,27 @@ async function connectFamily(familyId) {
   cloud.familyDoc = familySnap.data();
   setCloudStep(`Step 3/5: Family document found. Checking owner/member access...`, "warn");
 
-  await ensureOwnerMemberRecord(familyId, cloud.familyDoc);
+  // These are useful repair/profile writes, but they must not block the app from loading.
+  // If they are slow or blocked, the app continues because the direct diagnostics already proved reads work.
+  setCloudStep(`Step 3/5: Checking owner/member access... optional repair update`, "warn");
+  await tryTimedOptionalStep(
+    "Owner/member repair",
+    ensureOwnerMemberRecord(familyId, cloud.familyDoc),
+    4000
+  );
 
-  await saveUserCurrentFamily(
-    familyId,
-    cloud.user.uid === cloud.familyDoc.createdBy ? "owner" : "member"
-  ).catch(error => {
-    cloud.lastError = error.message;
-  });
+  setCloudStep(`Step 3/5: Saving user profile mapping...`, "warn");
+  await tryTimedOptionalStep(
+    "User profile family mapping",
+    saveUserCurrentFamily(familyId, cloud.user.uid === cloud.familyDoc.createdBy ? "owner" : "member"),
+    4000
+  );
+
+  await tryTimedOptionalStep(
+    "Fixed owner role write",
+    ensureFixedOwnerMemberRole(),
+    4000
+  );
 
   try {
     const memberSnap = await timedStep(
@@ -3185,8 +3460,13 @@ async function connectFamily(familyId) {
     );
 
     if (stateSnap.exists() && stateSnap.data()?.data) {
+      cloud.applyingRemote = true;
       state = normalizeState(stateSnap.data().data);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      cloud.applyingRemote = false;
+      cloud.hasLoadedRemote = true;
+      cloud.lastRemoteAt = new Date().toISOString();
+      cloud.pendingLocalChanges = false;
     } else {
       await timedStep(
         `Creating missing shared family data document...`,
@@ -3245,7 +3525,11 @@ async function connectFamily(familyId) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.applyingRemote = false;
     cloud.ready = true;
+    cloud.hasLoadedRemote = true;
+    cloud.lastRemoteAt = new Date().toISOString();
+    cloud.pendingLocalChanges = false;
     render();
+    renderSyncHealth();
   }, error => {
     cloud.ready = false;
     cloud.lastError = error.message;
@@ -3256,23 +3540,41 @@ async function connectFamily(familyId) {
 }
 
 function scheduleCloudSave() {
-  if (!cloud || !cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
+  if (!cloud || !cloud.user || cloud.applyingRemote) return;
+
+  if (!cloud.ready || !cloud.stateRef) {
+    clearTimeout(cloud.saveTimer);
+    cloud.saveTimer = setTimeout(() => ensureCloudConnection("pending local save"), 900);
+    return;
+  }
+
   clearTimeout(cloud.saveTimer);
-  cloud.saveTimer = setTimeout(saveCloudNow, 700);
+  cloud.saveTimer = setTimeout(() => saveCloudNow(false), 700);
 }
 
-async function saveCloudNow() {
+async function saveCloudNow(force = false) {
   if (!cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
+
+  if (!force && !cloud.pendingLocalChanges) return;
 
   try {
     await cloud.fb.setDoc(cloud.stateRef, {
       data: state,
       updatedAt: cloud.fb.serverTimestamp(),
-      updatedBy: cloud.user.uid
+      updatedBy: cloud.user.uid,
+      updatedByEmail: cloud.user.email || "",
+      clientUpdatedAt: new Date().toISOString()
     }, { merge: true });
+
+    cloud.pendingLocalChanges = false;
+    cloud.lastCloudSaveAt = new Date().toISOString();
+    setCloudStatus(`Cloud sync active. Last save: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`, "good");
+    renderSyncHealth();
   } catch (error) {
     cloud.lastError = error.message;
+    addDiagnostic("Cloud save", error, "bad");
     setCloudStatus(`Could not save to cloud: ${error.message}`, "bad");
+    renderSyncHealth();
   }
 }
 
@@ -3554,6 +3856,7 @@ window.addEventListener("load", async () => {
   wireCloudControls();
   wireCloudRecoveryControls();
   wireDiagnosticsControls();
+  wireSyncHealthControls();
   wireGoogleCalendarControls();
   wireRoleSetupControls();
   renderCloudPanel();
@@ -3605,6 +3908,7 @@ function wireCloudRecoveryControls() {
 
 wireCloudRecoveryControls();
 wireDiagnosticsControls();
+wireSyncHealthControls();
 render();
 
 

@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.11",
+  "name": "Family Command Center V4.8.14",
   "short_name": "Family Hub",
-  "description": "Cloud activation fix when family, member, and state documents are readable but cloud.ready stays false.",
+  "description": "Fixed owner emails for Elad and Maayan plus owner/admin Firestore role management.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

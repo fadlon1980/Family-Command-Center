@@ -1,18 +1,51 @@
-# V4.8.11 Setup Notes
+# V4.8.14 Setup Notes
 
-No Firestore rules change is required if you already published the V4.8.8/V4.8.9 rules.
+This version should use the updated Firestore rules included in this package.
 
-## Test
+## Step 1 — Upload files to GitHub
+
+Upload all V4.8.14 files.
 
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-11
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-14
 ```
 
-Then:
+## Step 2 — Publish Firestore rules
 
-1. Go to Settings.
-2. Run connection check.
-3. If all reads are good but cloud sync is still inactive, click:
-   Activate sync from readable data.
+Firebase Console:
+
+```text
+Firestore Database → Rules
+```
+
+Paste the full content from:
+
+```text
+firestore.rules
+```
+
+Click Publish.
+
+## Step 3 — Confirm owner emails
+
+The app hard-codes these as owners:
+
+```text
+fadlon1980@gmail.com
+fadlonmay@gmail.com
+```
+
+Both should be treated as owners in the app.
+
+## Step 4 — If Maayan still shows viewer
+
+From Elad account:
+
+1. Go to Settings → Family members.
+2. Set Maayan role to `owner`.
+3. Click Sync now.
+4. Ask Maayan to refresh or open `?version=4-8-14`.
+
+The app should keep her as owner after that.

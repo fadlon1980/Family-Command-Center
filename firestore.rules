@@ -1,7 +1,9 @@
 rules_version = '2';
 
-// V4.8.8 rules: allow the family creator/owner to reconnect and repair their member record.
-// This prevents lockout if the owner member document is missing or was not created correctly.
+// V4.8.14 rules: original creator OR a member with role owner/admin can manage family.
+// The app also hard-codes these emails as owner in the UI:
+// fadlon1980@gmail.com and fadlonmay@gmail.com.
+// Firestore rules cannot safely check email alone, so they use the member role stored in Firestore.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -9,14 +11,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function memberDoc(familyId) {
+      return get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
     function isMember(familyId) {
       return signedIn()
         && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
     }
 
-    function isOwner(familyId) {
+    function isOriginalCreator(familyId) {
       return signedIn()
         && get(/databases/$(database)/documents/families/$(familyId)).data.createdBy == request.auth.uid;
+    }
+
+    function isFamilyManager(familyId) {
+      return isOriginalCreator(familyId)
+        || (
+          isMember(familyId)
+          && (
+            memberDoc(familyId).data.role == "owner"
+            || memberDoc(familyId).data.role == "admin"
+          )
+        );
     }
 
     match /users/{uid} {
@@ -27,35 +44,45 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid;
 
-      // Members can read/update. The original creator can also read/update even if their member record is missing.
-      allow read, update: if isMember(familyId)
-        || (signedIn() && resource.data.createdBy == request.auth.uid);
-
+      allow read: if isMember(familyId) || isOriginalCreator(familyId);
+      allow update: if isMember(familyId) || isOriginalCreator(familyId);
       allow delete: if false;
 
       match /members/{uid} {
         allow read: if isMember(familyId)
-          || isOwner(familyId)
+          || isOriginalCreator(familyId)
           || (signedIn() && request.auth.uid == uid);
 
-        // A user can create their own member record if they know the invite code.
-        // The family owner can also create/repair their own member record.
+        // Join/repair:
+        // - original creator can repair/create their member record
+        // - family manager can manage members
+        // - user can create own member if they know invite code
         allow create: if signedIn()
-          && request.auth.uid == uid
           && (
-            isOwner(familyId)
-            || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
+            isFamilyManager(familyId)
+            || (
+              request.auth.uid == uid
+              && (
+                isOriginalCreator(familyId)
+                || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
+              )
+            )
           );
 
-        // Users can update their own member record. Owner can also manage member docs.
-        allow update: if (signedIn() && request.auth.uid == uid)
-          || isOwner(familyId);
+        // User may update their own presence/profile fields.
+        // Family manager may update roles and member records.
+        allow update: if isFamilyManager(familyId)
+          || (
+            signedIn()
+            && request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+          );
 
-        allow delete: if isOwner(familyId);
+        allow delete: if isFamilyManager(familyId);
       }
 
       match /state/{docId} {
-        allow read, write: if isMember(familyId) || isOwner(familyId);
+        allow read, write: if isMember(familyId) || isOriginalCreator(familyId);
       }
     }
   }

@@ -1,44 +1,46 @@
-# Family Command Center PWA V4.8.11 — Cloud Activation Fix
+# Family Command Center PWA V4.8.14 — Fixed Owner Emails
 
-This version fixes the case shown by this diagnostic pattern:
+This version hard-codes two family owner emails in the app:
 
 ```text
-Family document readable: GOOD
-Member record readable: GOOD
-Shared data readable: GOOD
-Cloud ready: false
+fadlon1980@gmail.com
+fadlonmay@gmail.com
 ```
 
 ## What changed
 
-- If the app can directly read:
-  - the family document
-  - your member record
-  - the shared family state
-- then it activates cloud sync directly instead of waiting forever for a listener state.
+- `fadlon1980@gmail.com` is always treated as `owner`
+- `fadlonmay@gmail.com` is always treated as `owner`
+- Automatic role assignment will return `owner` for both emails
+- Role setup panel will be visible for both emails
+- The app will try to write `role: owner` into the member record for both emails
+- Keeps V4.8.13 auto reconnect and live sync stabilizer
 
-## New diagnostics action
+## Important Firestore rules update
 
-Settings → Diagnostics & friendly errors now includes:
+This version includes updated `firestore.rules`.
+
+The new rules allow:
+
+- original creator to manage family
+- members with role `owner` or `admin` to manage members/family settings
+- users to update their own profile/presence without changing their role
+
+## After upload
+
+Open:
 
 ```text
-Activate sync from readable data
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-14
 ```
 
-This manually activates cloud sync when the diagnostic checks show all data is readable.
+## Recommended test
 
-## Open after upload
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-11
-```
-
-## What to do
-
-1. Upload V4.8.11.
-2. Open the URL above.
-3. Go to Settings.
-4. Click Run connection check.
-5. If needed, click Activate sync from readable data.
-
-No Firestore rules change is required if V4.8.8+ rules are already published.
+1. Upload V4.8.14.
+2. Publish the included `firestore.rules`.
+3. Sign in as Elad.
+4. Confirm Maayan member record has `role = owner`.
+5. Sign in as Maayan.
+6. Confirm Settings shows her as owner and not viewer.
+7. Add a shopping item from Maayan.
+8. Confirm it syncs to Elad.
