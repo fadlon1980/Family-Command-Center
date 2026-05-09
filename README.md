@@ -1,46 +1,59 @@
-# Family Command Center PWA V4.8.8 — Family Space Connection Repair
+# Family Command Center PWA V4.8.10 — Friendly Diagnostics
 
-This version fixes the issue where the app stays on:
+This version adds a dedicated diagnostics panel to help identify why the app freezes or behaves unexpectedly.
 
-```text
-Signed in as ... Connecting to family space FAM-...
-```
+## New in V4.8.10
 
-## What changed
-
-- Added safer family-space connection flow
-- Added timeout and clearer Firestore errors
-- Added owner member repair logic
-- If the signed-in user is the family creator, the app can recreate/repair their member record
-- Updated `firestore.rules` so the family creator can read/update the family space even if their member record is missing
-- Updated rules allow the family owner to repair member docs and access family state
-
-## Important: Publish updated Firestore rules
-
-You must publish the included `firestore.rules` file.
-
-Go to:
+Settings now includes:
 
 ```text
-Firebase Console → Firestore Database → Rules
+Diagnostics & friendly errors
 ```
 
-Paste the full content of `firestore.rules`, then click **Publish**.
+With buttons:
 
-## Open after upload
+- **Run connection check**
+- **Copy diagnostic report**
+- **Clear diagnostics**
+
+## What it checks
+
+- App version and URL
+- Firebase config loaded
+- Firebase SDK initialized
+- Google sign-in state
+- Saved Family ID
+- Family document readability
+- Current user member record
+- Shared family state document
+- Cloud sync readiness
+
+## Friendly error explanations
+
+The app now translates technical errors into clear actions for:
+
+- Firestore permission problems
+- Missing family document
+- Missing member record
+- Missing shared state
+- Network/timeouts
+- Popup blocked
+- Unauthorized domain
+- Google API key website restriction
+- Calendar API disabled/blocked
+- Missing Firebase config
+- JavaScript errors
+
+## Use after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-8
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-10
 ```
 
-## Expected result
-
-After sign-in, you should see:
+Then go to:
 
 ```text
-Cloud sync active for fadlon1980@gmail.com. Family ID: FAM-59ATQF5R
+Settings → Diagnostics & friendly errors → Run connection check
 ```
 
-## No local storage key change
-
-Stable local storage keys are preserved.
+If you need help, click **Copy diagnostic report** and paste it into ChatGPT.

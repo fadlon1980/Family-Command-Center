@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V4.8.8</title>
+  <title>Family Command Center V4.8.10</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -694,6 +694,38 @@
               </div>
             </div>
 
+
+
+            <div class="cloud-recovery-panel">
+              <div class="section-title">
+                <div>
+                  <h3>Connection recovery</h3>
+                  <p class="muted">Use this if the app is stuck while connecting to the family space.</p>
+                </div>
+              </div>
+              <div class="button-row">
+                <button id="forceReconnectBtn" type="button" class="secondary">Reconnect now</button>
+                <button id="clearFamilyCacheBtn" type="button" class="ghost">Clear cached Family ID</button>
+              </div>
+              <p id="cloudDebugText" class="muted small-note">Connection step details will appear in the cloud status message above.</p>
+            </div>
+
+
+            <div class="diagnostics-panel">
+              <div class="section-title">
+                <div>
+                  <h3>Diagnostics & friendly errors</h3>
+                  <p class="muted">Use this when the app freezes, does not sync, or behaves unexpectedly.</p>
+                </div>
+              </div>
+              <div class="button-row">
+                <button id="runDiagnosticsBtn" type="button" class="secondary">Run connection check</button>
+                <button id="copyDiagnosticsBtn" type="button" class="ghost">Copy diagnostic report</button>
+                <button id="clearDiagnosticsBtn" type="button" class="ghost">Clear diagnostics</button>
+              </div>
+              <div id="diagnosticsSummary" class="diagnostics-summary">No diagnostic messages yet.</div>
+              <div id="diagnosticsList" class="diagnostics-list"></div>
+            </div>
 
             <div class="family-members-panel">
               <div class="section-title">

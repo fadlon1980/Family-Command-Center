@@ -2385,6 +2385,7 @@ async function ensureFirebase() {
     doc: fsMod.doc,
     setDoc: fsMod.setDoc,
     getDoc: fsMod.getDoc,
+    getDocs: fsMod.getDocs,
     collection: fsMod.collection,
     onSnapshot: fsMod.onSnapshot,
     serverTimestamp: fsMod.serverTimestamp
@@ -2680,6 +2681,293 @@ async function joinFamilySpace(familyId, inviteCode) {
   await connectFamily(familyId);
 }
 
+
+
+const APP_VERSION = "4.8.10";
+const diagnostics = {
+  entries: [],
+  maxEntries: 30
+};
+
+function nowTimeLabel() {
+  return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+function friendlyErrorDetails(error, context = "App") {
+  const raw = (error?.message || String(error || "") || "").trim();
+  const code = error?.code || "";
+  const text = `${code} ${raw}`.toLowerCase();
+
+  let title = `${context} issue`;
+  let cause = raw || "Unknown error";
+  let action = "Try refreshing the app. If it repeats, copy the diagnostic report and share it.";
+
+  if (/permission|insufficient|permission-denied/.test(text)) {
+    title = "Firestore permission problem";
+    cause = "The app is signed in, but Firestore rules are blocking this read/write.";
+    action = "Publish the latest firestore.rules in Firebase Console → Firestore Database → Rules, wait 1 minute, then click Reconnect now.";
+  } else if (/not found|was not found|not-found/.test(text)) {
+    title = "Family space or document not found";
+    cause = "The saved Family ID points to a document that does not exist, or the shared state document is missing.";
+    action = "Check Firestore → families → your Family ID. If it does not exist, clear cached Family ID and create/join a family space again.";
+  } else if (/timed out|timeout/.test(text)) {
+    title = "Connection timeout";
+    cause = "The app waited for Firebase but did not get an answer in time.";
+    action = "Check internet connection, refresh the page, then click Reconnect now. If it keeps happening, Firebase rules or the family document may be blocking the request.";
+  } else if (/network|unavailable|failed to fetch|offline/.test(text)) {
+    title = "Network connection problem";
+    cause = "The browser could not reach Firebase or Google services.";
+    action = "Check Wi-Fi/mobile data, disable VPN if used, then refresh.";
+  } else if (/popup|closed-by-user|blocked/.test(text)) {
+    title = "Popup blocked or closed";
+    cause = "The Google sign-in/Calendar popup did not open or was closed.";
+    action = "Allow popups for fadlon1980.github.io and try again in Chrome/Edge.";
+  } else if (/operation-not-allowed/.test(text)) {
+    title = "Sign-in provider disabled";
+    cause = "Firebase Authentication provider is not enabled.";
+    action = "Go to Firebase Authentication → Sign-in method and enable Google and/or Email/Password.";
+  } else if (/unauthorized-domain/.test(text)) {
+    title = "Unauthorized domain";
+    cause = "Firebase Auth does not allow this GitHub Pages domain.";
+    action = "Go to Firebase Authentication → Settings → Authorized domains and add fadlon1980.github.io.";
+  } else if (/requests-from-referer|api key|referer/.test(text)) {
+    title = "Google API key website restriction";
+    cause = "Google blocked the request because this GitHub Pages URL is not allowed for the API key.";
+    action = "In Google Cloud API key restrictions, allow https://fadlon1980.github.io/* and https://fadlon1980.github.io/Family-Command-Center/*.";
+  } else if (/calendar api|status 403|access was blocked/.test(text)) {
+    title = "Google Calendar API access problem";
+    cause = "Calendar API is disabled, blocked, or missing permission.";
+    action = "Enable Google Calendar API in Google Cloud project fadlon-family-hub, then reconnect Google Calendar.";
+  } else if (/firebase config|not configured|family_firebase_config/.test(text)) {
+    title = "Firebase configuration missing";
+    cause = "The app could not find firebase-config.js or FAMILY_FIREBASE_CONFIG.";
+    action = "Confirm firebase-config.js is uploaded to GitHub and contains window.FAMILY_FIREBASE_CONFIG.";
+  } else if (/loading family|connecting to family/.test(text)) {
+    title = "Family space did not finish loading";
+    cause = "The app started connecting but did not complete all Firestore reads/listeners.";
+    action = "Run connection check. It will show whether family document, member record, or shared state is failing.";
+  }
+
+  return { title, cause, action, technical: raw || code || "No technical message" };
+}
+
+function addDiagnostic(context, errorOrMessage, level = "warn", override = {}) {
+  const details = typeof errorOrMessage === "string"
+    ? friendlyErrorDetails(new Error(errorOrMessage), context)
+    : friendlyErrorDetails(errorOrMessage, context);
+
+  const entry = {
+    time: nowTimeLabel(),
+    level,
+    context,
+    ...details,
+    ...override
+  };
+
+  diagnostics.entries.unshift(entry);
+  diagnostics.entries = diagnostics.entries.slice(0, diagnostics.maxEntries);
+  renderDiagnostics();
+}
+
+function addDiagnosticInfo(context, title, cause, action = "", level = "good", technical = "") {
+  diagnostics.entries.unshift({
+    time: nowTimeLabel(),
+    level,
+    context,
+    title,
+    cause,
+    action,
+    technical
+  });
+  diagnostics.entries = diagnostics.entries.slice(0, diagnostics.maxEntries);
+  renderDiagnostics();
+}
+
+function renderDiagnostics() {
+  const list = document.getElementById("diagnosticsList");
+  const summary = document.getElementById("diagnosticsSummary");
+  if (!list || !summary) return;
+
+  const badCount = diagnostics.entries.filter(e => e.level === "bad").length;
+  const warnCount = diagnostics.entries.filter(e => e.level === "warn").length;
+  const goodCount = diagnostics.entries.filter(e => e.level === "good").length;
+
+  summary.textContent = diagnostics.entries.length
+    ? `${diagnostics.entries.length} diagnostic message(s): ${badCount} error(s), ${warnCount} warning(s), ${goodCount} OK check(s).`
+    : "No diagnostic messages yet.";
+
+  list.innerHTML = diagnostics.entries.map(entry => `
+    <div class="diagnostic-item ${escapeHtml(entry.level || "warn")}">
+      <div class="diagnostic-title">[${escapeHtml(entry.time)}] ${escapeHtml(entry.title)}</div>
+      <div class="diagnostic-cause"><strong>Likely cause:</strong> ${escapeHtml(entry.cause || "")}</div>
+      ${entry.action ? `<div class="diagnostic-action"><strong>What to do:</strong> ${escapeHtml(entry.action)}</div>` : ""}
+      ${entry.technical ? `<div class="diagnostic-tech">${escapeHtml(entry.technical)}</div>` : ""}
+    </div>
+  `).join("");
+}
+
+function getDiagnosticReportText() {
+  const lines = [
+    `Family Command Center diagnostic report`,
+    `App version: ${APP_VERSION}`,
+    `URL: ${location.href}`,
+    `Time: ${new Date().toISOString()}`,
+    `Signed in email: ${cloud?.user?.email || "not signed in"}`,
+    `User UID: ${cloud?.user?.uid || "not signed in"}`,
+    `Family ID: ${cloud?.familyId || getStoredFamilyId?.() || "none"}`,
+    `Cloud ready: ${Boolean(cloud?.ready)}`,
+    `Last error: ${cloud?.lastError || "none"}`,
+    `User agent: ${navigator.userAgent}`,
+    ``,
+    `Diagnostics:`
+  ];
+
+  diagnostics.entries.forEach((entry, index) => {
+    lines.push(`${index + 1}. [${entry.time}] ${entry.level?.toUpperCase()} - ${entry.title}`);
+    lines.push(`   Cause: ${entry.cause}`);
+    if (entry.action) lines.push(`   Action: ${entry.action}`);
+    if (entry.technical) lines.push(`   Technical: ${entry.technical}`);
+  });
+
+  return lines.join("\n");
+}
+
+async function copyDiagnosticReport() {
+  const text = getDiagnosticReportText();
+  try {
+    await navigator.clipboard.writeText(text);
+    addDiagnosticInfo("Diagnostics", "Diagnostic report copied", "The report was copied to your clipboard.", "Paste it into ChatGPT if you want help debugging.", "good");
+  } catch {
+    prompt("Copy this diagnostic report:", text);
+  }
+}
+
+async function runConnectionDiagnostics() {
+  diagnostics.entries = [];
+  renderDiagnostics();
+
+  addDiagnosticInfo("Diagnostics", "App loaded", `Version ${APP_VERSION} is running from ${location.hostname}.`, "If this version is not expected, clear browser/PWA cache.", "good", location.href);
+
+  if (!window.FAMILY_FIREBASE_CONFIG) {
+    addDiagnostic("Firebase config", "FAMILY_FIREBASE_CONFIG is missing. firebase-config.js may not be uploaded or loaded.", "bad");
+    return;
+  }
+  addDiagnosticInfo("Firebase config", "Firebase config found", `Project ID: ${window.FAMILY_FIREBASE_CONFIG.projectId || "unknown"}`, "", "good");
+
+  try {
+    await ensureFirebase();
+    addDiagnosticInfo("Firebase SDK", "Firebase initialized", "Firebase SDK, Auth, and Firestore initialized successfully.", "", "good");
+  } catch (error) {
+    addDiagnostic("Firebase SDK", error, "bad");
+    return;
+  }
+
+  if (!cloud.user) {
+    addDiagnostic("Authentication", "User is not signed in.", "warn", {
+      title: "Not signed in",
+      cause: "The app cannot check family data until you sign in.",
+      action: "Click Sign in with Google in Settings."
+    });
+    return;
+  }
+  addDiagnosticInfo("Authentication", "User signed in", `Signed in as ${cloud.user.email}.`, "", "good", `uid=${cloud.user.uid}`);
+
+  const familyId = cloud.familyId || getStoredFamilyId();
+  if (!familyId) {
+    addDiagnostic("Family ID", "No Family ID is saved.", "warn", {
+      title: "No saved Family ID",
+      cause: "The app does not know which family space to open.",
+      action: "Create a shared family space or join using Family ID + Invite Code."
+    });
+    return;
+  }
+  addDiagnosticInfo("Family ID", "Saved Family ID found", `Family ID: ${familyId}`, "", "good");
+
+  try {
+    const familyRef = cloud.fb.doc(cloud.db, "families", familyId);
+    const familySnap = await withTimeout(cloud.fb.getDoc(familyRef), 8000, "Reading family document timed out.");
+    if (!familySnap.exists()) {
+      addDiagnostic("Family document", `Family document ${familyId} was not found.`, "bad");
+      return;
+    }
+    const data = familySnap.data();
+    addDiagnosticInfo("Family document", "Family document readable", "The family document exists and Firestore allowed reading it.", "", "good", `createdBy=${data.createdBy || "missing"} inviteCode=${data.inviteCode ? "present" : "missing"}`);
+
+    const memberRef = cloud.fb.doc(cloud.db, "families", familyId, "members", cloud.user.uid);
+    try {
+      const memberSnap = await withTimeout(cloud.fb.getDoc(memberRef), 8000, "Reading your member record timed out.");
+      if (!memberSnap.exists()) {
+        addDiagnostic("Member record", `Your member record is missing at families/${familyId}/members/${cloud.user.uid}.`, "bad", {
+          title: "Missing member record",
+          cause: "The family exists, but your user is not listed as a member.",
+          action: "If you are the owner, V4.8.8+ rules should repair this. Otherwise join again with Family ID + Invite Code, or manually create the member record."
+        });
+      } else {
+        const member = memberSnap.data();
+        addDiagnosticInfo("Member record", "Your member record is readable", `Role: ${member.role || "missing"}; Email: ${member.email || "missing"}`, "", "good");
+      }
+    } catch (error) {
+      addDiagnostic("Member record", error, "bad");
+    }
+
+    const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+    try {
+      const stateSnap = await withTimeout(cloud.fb.getDoc(stateRef), 8000, "Reading shared state timed out.");
+      if (!stateSnap.exists()) {
+        addDiagnostic("Shared state", "Shared family state document is missing.", "warn", {
+          title: "Shared data document missing",
+          cause: "The family exists, but state/main was not created yet.",
+          action: "Click Reconnect now. The app should create it if rules allow."
+        });
+      } else {
+        addDiagnosticInfo("Shared state", "Shared data is readable", "families/{familyId}/state/main exists and can be read.", "", "good");
+      }
+    } catch (error) {
+      addDiagnostic("Shared state", error, "bad");
+    }
+
+    if (cloud.ready) {
+      addDiagnosticInfo("Cloud sync", "Cloud sync active", "The app currently considers cloud sync active.", "", "good");
+    } else {
+      addDiagnostic("Cloud sync", "Cloud sync is not active yet.", "warn", {
+        title: "Cloud sync not active",
+        cause: "The app is signed in and has a Family ID, but the shared data listener did not fully activate.",
+        action: "Click Reconnect now. If it fails, copy this diagnostic report."
+      });
+    }
+  } catch (error) {
+    addDiagnostic("Family document", error, "bad");
+  }
+}
+
+function clearDiagnostics() {
+  diagnostics.entries = [];
+  renderDiagnostics();
+}
+
+function wireDiagnosticsControls() {
+  document.getElementById("runDiagnosticsBtn")?.addEventListener("click", runConnectionDiagnostics);
+  document.getElementById("copyDiagnosticsBtn")?.addEventListener("click", copyDiagnosticReport);
+  document.getElementById("clearDiagnosticsBtn")?.addEventListener("click", clearDiagnostics);
+}
+
+
+function setCloudStep(message, level = "warn") {
+  setCloudStatus(message, level);
+  const debug = document.getElementById("cloudDebugText");
+  if (debug) debug.textContent = message;
+
+  if (level === "bad") {
+    addDiagnostic("Cloud connection", message, "bad");
+  }
+}
+
+async function timedStep(label, promise, ms = 9000) {
+  setCloudStep(label, "warn");
+  return withTimeout(promise, ms, `${label} timed out after ${Math.round(ms / 1000)} seconds.`);
+}
+
+
 async function connectFamily(familyId) {
   await ensureFirebase();
   if (!cloud.user) throw new Error("Sign in first.");
@@ -2689,7 +2977,8 @@ async function connectFamily(familyId) {
 
   cloud.familyId = familyId;
   localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
-  setCloudStatus(`Connecting to family space ${familyId}...`, "warn");
+
+  setCloudStep(`Step 1/5: Preparing connection to family space ${familyId}...`, "warn");
 
   if (cloud.unsubscribeState) cloud.unsubscribeState();
   if (cloud.unsubscribeMembers) cloud.unsubscribeMembers();
@@ -2697,31 +2986,40 @@ async function connectFamily(familyId) {
   cloud.unsubscribeState = null;
   cloud.unsubscribeMembers = null;
   cloud.unsubscribeFamily = null;
+  stopPresenceHeartbeat();
 
   const familyRef = cloud.fb.doc(cloud.db, "families", familyId);
+  const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+  const membersRef = cloud.fb.collection(cloud.db, "families", familyId, "members");
 
   let familySnap;
   try {
-    familySnap = await withTimeout(
+    familySnap = await timedStep(
+      `Step 2/5: Reading family document ${familyId}...`,
       cloud.fb.getDoc(familyRef),
-      9000,
-      "Timed out while reading family space. Check Firestore rules and internet connection."
+      10000
     );
   } catch (error) {
     cloud.ready = false;
+    cloud.lastError = error.message;
     const msg = error.message || String(error);
     if (/permission|insufficient/i.test(msg)) {
-      throw new Error(`Firestore blocked reading family space ${familyId}. Publish the V4.8.8 firestore.rules file, then refresh.`);
+      setCloudStep(`Firestore permission error while reading ${familyId}. Publish V4.8.8/V4.8.9 firestore.rules, wait 1 minute, then try Reconnect now.`, "bad");
+    } else {
+      setCloudStep(`Could not read family space ${familyId}: ${msg}`, "bad");
     }
     throw error;
   }
 
   if (!familySnap.exists()) {
     cloud.ready = false;
-    throw new Error(`Family space ${familyId} was not found.`);
+    const msg = `Family space ${familyId} was not found in Firestore. Clear cached Family ID or create/join the correct family space.`;
+    setCloudStep(msg, "bad");
+    throw new Error(msg);
   }
 
   cloud.familyDoc = familySnap.data();
+  setCloudStep(`Step 3/5: Family document found. Checking owner/member access...`, "warn");
 
   await ensureOwnerMemberRecord(familyId, cloud.familyDoc);
 
@@ -2732,6 +3030,55 @@ async function connectFamily(familyId) {
     cloud.lastError = error.message;
   });
 
+  try {
+    const memberSnap = await timedStep(
+      `Step 4/5: Loading family members...`,
+      cloud.fb.getDocs(membersRef),
+      10000
+    );
+    cloud.members = memberSnap.docs.map(docSnap => ({ uid: docSnap.id, ...docSnap.data() }));
+  } catch (error) {
+    cloud.lastError = error.message;
+    setCloudStep(`Could not load family members: ${error.message}`, "bad");
+    addDiagnostic("Family members", error, "bad");
+    throw error;
+  }
+
+  cloud.stateRef = stateRef;
+
+  try {
+    const stateSnap = await timedStep(
+      `Step 5/5: Loading shared family data...`,
+      cloud.fb.getDoc(stateRef),
+      10000
+    );
+
+    if (stateSnap.exists() && stateSnap.data()?.data) {
+      state = normalizeState(stateSnap.data().data);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } else {
+      await timedStep(
+        `Creating missing shared family data document...`,
+        cloud.fb.setDoc(stateRef, {
+          data: state,
+          updatedAt: cloud.fb.serverTimestamp(),
+          updatedBy: cloud.user.uid
+        }, { merge: true }),
+        10000
+      );
+    }
+  } catch (error) {
+    cloud.lastError = error.message;
+    setCloudStep(`Could not load shared family data: ${error.message}`, "bad");
+    addDiagnostic("Shared family data", error, "bad");
+    throw error;
+  }
+
+  cloud.ready = true;
+  setCloudStep(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
+  render();
+
+  // Start live listeners only after initial connection succeeds.
   cloud.unsubscribeFamily = cloud.fb.onSnapshot(familyRef, snap => {
     if (!snap.exists()) return;
     cloud.familyDoc = snap.data();
@@ -2741,12 +3088,9 @@ async function connectFamily(familyId) {
     if (typeof applyRoleBasedView === "function") applyRoleBasedView();
   }, error => {
     cloud.lastError = error.message;
-    setCloudStatus(`Could not listen to family settings: ${error.message}`, "bad");
+    setCloudStep(`Family settings listener error: ${error.message}`, "bad");
   });
 
-  cloud.stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
-
-  const membersRef = cloud.fb.collection(cloud.db, "families", familyId, "members");
   cloud.unsubscribeMembers = cloud.fb.onSnapshot(membersRef, snapshot => {
     cloud.members = snapshot.docs.map(docSnap => ({ uid: docSnap.id, ...docSnap.data() }));
     if (typeof autoAssignCurrentUserRole === "function") {
@@ -2759,49 +3103,25 @@ async function connectFamily(familyId) {
     if (typeof renderKidRequests === "function") renderKidRequests();
   }, error => {
     cloud.lastError = error.message;
-    setCloudStatus(`Could not load family members: ${error.message}`, "bad");
+    setCloudStep(`Family members listener error: ${error.message}`, "bad");
   });
 
-  startPresenceHeartbeat();
-
-  cloud.unsubscribeState = cloud.fb.onSnapshot(cloud.stateRef, snap => {
-    if (!snap.exists()) {
-      // If state document is missing, create it from local/default state.
-      if (cloud.user) {
-        cloud.fb.setDoc(cloud.stateRef, {
-          data: state,
-          updatedAt: cloud.fb.serverTimestamp(),
-          updatedBy: cloud.user.uid
-        }, { merge: true }).catch(error => {
-          cloud.lastError = error.message;
-          setCloudStatus(`Could not create family state: ${error.message}`, "bad");
-        });
-      }
-      cloud.ready = true;
-      setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
-      renderCloudPanel();
-      return;
-    }
-
-    const incoming = snap.data();
-    if (!incoming || !incoming.data) return;
+  cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
+    if (!snap.exists() || !snap.data()?.data) return;
 
     cloud.applyingRemote = true;
-    state = normalizeState(incoming.data);
+    state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    cloud.ready = true;
     cloud.applyingRemote = false;
-    setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
+    cloud.ready = true;
     render();
   }, error => {
     cloud.ready = false;
     cloud.lastError = error.message;
-    setCloudStatus(`Cloud sync error for ${familyId}: ${error.message}`, "bad");
+    setCloudStep(`Cloud sync listener error for ${familyId}: ${error.message}`, "bad");
   });
 
-  cloud.ready = true;
-  setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
-  renderCloudPanel();
+  startPresenceHeartbeat();
 }
 
 function scheduleCloudSave() {
@@ -3101,6 +3421,8 @@ function wireCloudControls() {
 
 window.addEventListener("load", async () => {
   wireCloudControls();
+  wireCloudRecoveryControls();
+  wireDiagnosticsControls();
   wireGoogleCalendarControls();
   wireRoleSetupControls();
   renderCloudPanel();
@@ -3118,6 +3440,40 @@ window.addEventListener("load", async () => {
 
 wireAuthControlsBackupDelegation();
 wireCalendarControlsBackupDelegation();
+
+async function forceReconnectFamilySpace() {
+  try {
+    await ensureFirebase();
+    const familyId = cloud.familyId || getStoredFamilyId();
+    if (!familyId) {
+      setCloudStep("No cached Family ID was found. Use Join existing family space.", "warn");
+      return;
+    }
+    await connectFamily(familyId);
+  } catch (error) {
+    setCloudStep(`Reconnect failed: ${error.message || error}`, "bad");
+  }
+}
+
+function clearCachedFamilyId() {
+  localStorage.removeItem(CLOUD_FAMILY_ID_KEY);
+  for (const key of LEGACY_CLOUD_FAMILY_ID_KEYS || []) {
+    localStorage.removeItem(key);
+  }
+  cloud.familyId = "";
+  cloud.ready = false;
+  setCloudStep("Cached Family ID was cleared. Use Join existing family space or Create shared family space.", "warn");
+  renderCloudPanel();
+}
+
+function wireCloudRecoveryControls() {
+  document.getElementById("forceReconnectBtn")?.addEventListener("click", forceReconnectFamilySpace);
+  document.getElementById("clearFamilyCacheBtn")?.addEventListener("click", clearCachedFamilyId);
+}
+
+
+wireCloudRecoveryControls();
+wireDiagnosticsControls();
 render();
 
 
@@ -3202,4 +3558,19 @@ window.addEventListener("unhandledrejection", event => {
   if (/auth|firebase|popup|google|login|sign-in/i.test(msg)) {
     authButtonDebug(`Auth/login error: ${msg}`, "bad");
   }
+});
+
+
+window.addEventListener("error", event => {
+  addDiagnostic("Browser JavaScript", event.message || "Unknown JavaScript error", "bad", {
+    title: "Browser JavaScript error",
+    cause: "The app hit a JavaScript error, which can make buttons stop working or screens freeze.",
+    action: "Copy the diagnostic report and share it.",
+    technical: `${event.message || ""} at ${event.filename || ""}:${event.lineno || ""}:${event.colno || ""}`
+  });
+});
+
+window.addEventListener("unhandledrejection", event => {
+  const msg = event?.reason?.message || String(event?.reason || "");
+  addDiagnostic("Unhandled app promise", msg, "bad");
 });

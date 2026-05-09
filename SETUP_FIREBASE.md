@@ -1,35 +1,31 @@
-# V4.8.8 Setup Notes
+# V4.8.10 Setup Notes
 
-This version requires a Firestore rules update.
+No Firestore rules change is required if you already published the V4.8.8/V4.8.9 rules.
 
-## Step 1 — Upload V4.8.8 files to GitHub Pages
+## After upload
 
-Upload all files from the V4.8.8 package.
-
-## Step 2 — Publish the new Firestore rules
-
-Open Firebase Console:
+Open:
 
 ```text
-Firestore Database → Rules
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-10
 ```
 
-Paste the full content from the included file:
+Then:
 
-```text
-firestore.rules
-```
+1. Go to Settings.
+2. Find Diagnostics & friendly errors.
+3. Click Run connection check.
+4. Read the likely cause and recommended action.
+5. If needed, click Copy diagnostic report and paste it into ChatGPT.
 
-Click **Publish**.
+## If cloud sync still fails
 
-## Step 3 — Open the app
+The diagnostic report should tell whether the issue is:
 
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-8
-```
-
-## Why this rule update matters
-
-If the owner member record is missing or broken, old rules may block the owner from reading the family space.
-
-V4.8.8 allows the original family creator to reconnect and repair their owner member record.
+- rules/permission
+- missing family document
+- missing member record
+- missing state document
+- network timeout
+- cached old app version
+- JavaScript error
