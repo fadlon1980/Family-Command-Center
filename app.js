@@ -2765,7 +2765,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.16";
+const APP_VERSION = "4.8.17";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3204,6 +3204,136 @@ async function timedStep(label, promise, ms = 9000) {
 
 
 
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 102.4) / 10} KB`;
+  return `${Math.round(value / 1024 / 102.4) / 10} MB`;
+}
+
+async function testCloudWrite() {
+  setButtonBusy("testCloudWriteBtn", true, "Testing...");
+  try {
+    await ensureFirebase();
+
+    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+    if (!cloud.user || !familyId) throw new Error("Sign in and connect to a family space first.");
+
+    const testRef = cloud.fb.doc(cloud.db, "families", familyId, "state", `writeTest_${cloud.user.uid}`);
+    const started = performance.now();
+
+    await withTimeout(
+      cloud.fb.setDoc(testRef, {
+        ok: true,
+        email: cloud.user.email || "",
+        uid: cloud.user.uid,
+        testedAt: cloud.fb.serverTimestamp(),
+        clientTestedAt: new Date().toISOString(),
+        appVersion: APP_VERSION
+      }, { merge: true }),
+      12000,
+      "Small cloud write test timed out."
+    );
+
+    const duration = Math.round(performance.now() - started);
+    setCloudStep(`Small cloud write test succeeded in ${duration} ms. Firestore write permission is OK.`, "good");
+    addDiagnosticInfo(
+      "Cloud write test",
+      "Small cloud write succeeded",
+      "This device can write to Firestore. If full save still fails, the issue is likely the size/complexity of the shared state document or network speed.",
+      "Use Retry full save. If it still times out, we should move payments/tasks to separate Firestore documents in the next architecture update.",
+      "good",
+      `duration=${duration}ms`
+    );
+    return true;
+  } catch (error) {
+    addDiagnostic("Cloud write test", error, "bad", {
+      title: "Small cloud write failed",
+      cause: "This device could not write even a small test document to Firestore.",
+      action: "Check Firestore rules, internet connection, and whether V4.8.15 rules are published."
+    });
+    setCloudStep(`Small cloud write test failed: ${error.message}`, "bad");
+    return false;
+  } finally {
+    setButtonBusy("testCloudWriteBtn", false);
+  }
+}
+
+async function retryFullSaveLonger() {
+  if (cloud.syncInProgress || cloud.saveInProgress) {
+    setCloudStep("Another save/sync is already running. Please wait.", "warn");
+    return false;
+  }
+
+  setButtonBusy("retryFullSaveBtn", true, "Saving...");
+  cloud.syncInProgress = true;
+  const started = performance.now();
+
+  try {
+    await ensureFirebase();
+
+    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+    if (!cloud.user || !familyId) throw new Error("Sign in and connect to a family space first.");
+
+    if (!cloud.ready || !cloud.stateRef) {
+      await activateCloudFromReadableData(familyId);
+    }
+
+    const summary = stateSummaryForDiagnostics();
+    setCloudStep(`Retrying full save. Local state size: ${formatBytes(summary.bytes)}. Waiting up to 30 seconds...`, "warn");
+
+    cloud.saveInProgress = true;
+
+    await withTimeout(
+      cloud.fb.setDoc(cloud.stateRef, {
+        data: state,
+        updatedAt: cloud.fb.serverTimestamp(),
+        updatedBy: cloud.user.uid,
+        updatedByEmail: cloud.user.email || "",
+        clientUpdatedAt: new Date().toISOString(),
+        clientSummary: summary,
+        appVersion: APP_VERSION
+      }, { merge: true }),
+      30000,
+      "Full shared family save timed out after 30 seconds."
+    );
+
+    cloud.pendingLocalChanges = false;
+    cloud.lastCloudSaveAt = new Date().toISOString();
+    cloud.lastSyncDurationMs = performance.now() - started;
+
+    setCloudStep(`Full save succeeded in ${Math.round(cloud.lastSyncDurationMs)} ms.`, "good");
+    addDiagnosticInfo(
+      "Full cloud save",
+      "Full shared state saved",
+      `Saved local state to Firestore. Local state size: ${formatBytes(summary.bytes)}.`,
+      "Ask Maayan to click Pull latest from cloud.",
+      "good",
+      `duration=${Math.round(cloud.lastSyncDurationMs)}ms bytes=${summary.bytes}`
+    );
+
+    renderSyncHealth();
+    return true;
+  } catch (error) {
+    cloud.lastError = error.message;
+    addDiagnostic("Full cloud save", error, "bad", {
+      title: "Full shared state save failed",
+      cause: "The app could not save the full shared family state document.",
+      action: "Run Test cloud write. If the small write works but full save fails, the next fix should move Payments/Tasks/etc. into separate Firestore documents instead of one large shared state document."
+    });
+    setCloudStep(`Full save failed: ${error.message}`, "bad");
+    renderSyncHealth();
+    return false;
+  } finally {
+    cloud.saveInProgress = false;
+    cloud.syncInProgress = false;
+    setButtonBusy("retryFullSaveBtn", false);
+    renderSyncHealth();
+  }
+}
+
+
 function setButtonBusy(id, busy, busyText = "Working...") {
   const btn = document.getElementById(id);
   if (!btn) return;
@@ -3276,6 +3406,9 @@ function renderSyncHealth() {
     cloud.lastCloudSaveAt ? `last save from this device: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "no save from this device yet",
     cloud.lastSyncDurationMs ? `last sync took ${Math.round(cloud.lastSyncDurationMs)} ms` : ""
   ].filter(Boolean);
+
+  const localSummary = stateSummaryForDiagnostics();
+  parts.push(`local state size: ${formatBytes(localSummary.bytes)}`);
 
   if (cloud.pendingLocalChanges) parts.push("local changes waiting to save");
 
@@ -3457,6 +3590,8 @@ async function repairFixedOwnerRoleNow() {
 
 
 function wireSyncHealthControls() {
+  document.getElementById("testCloudWriteBtn")?.addEventListener("click", testCloudWrite);
+  document.getElementById("retryFullSaveBtn")?.addEventListener("click", retryFullSaveLonger);
   document.getElementById("forceSyncNowBtn")?.addEventListener("click", forceSyncNow);
   document.getElementById("repairFixedOwnerBtn")?.addEventListener("click", repairFixedOwnerRoleNow);
   document.getElementById("pullLatestBtn")?.addEventListener("click", async () => {
@@ -3706,8 +3841,8 @@ async function saveCloudNow(force = false) {
         clientUpdatedAt: new Date().toISOString(),
         clientSummary: summary
       }, { merge: true }),
-      10000,
-      "Saving shared family data to Firestore timed out."
+      15000,
+      "Saving shared family data to Firestore timed out after 15 seconds. Use Test cloud write, then Retry full save."
     );
 
     cloud.pendingLocalChanges = false;
