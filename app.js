@@ -2479,6 +2479,40 @@ async function saveUserCurrentFamily(familyId, role = "member") {
 }
 
 
+
+async function ensureOwnerMemberRecord(familyId, familyData) {
+  if (!cloud.user || !familyId || !familyData) return;
+
+  const isCreator = familyData.createdBy === cloud.user.uid;
+  if (!isCreator) return;
+
+  try {
+    const memberRef = cloud.fb.doc(cloud.db, "families", familyId, "members", cloud.user.uid);
+    await cloud.fb.setDoc(memberRef, {
+      email: cloud.user.email || "",
+      displayName: cloud.user.displayName || "",
+      photoURL: cloud.user.photoURL || "",
+      role: "owner",
+      repairedOwnerMember: true,
+      repairedAt: cloud.fb.serverTimestamp(),
+      online: true,
+      lastSeen: cloud.fb.serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    cloud.lastError = error.message;
+    // Do not throw here. Updated rules may still allow owner access to state.
+  }
+}
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+
 async function recoverFamilySpaceAfterLogin() {
   await ensureFirebase();
 
@@ -2513,7 +2547,8 @@ async function recoverFamilySpaceAfterLogin() {
     }
   }
 
-  setCloudStatus(`Signed in as ${cloud.user.email || "user"}. No family space auto-loaded. Use Create shared family space or Join existing family space below.`, "warn");
+  const reason = cloud.lastError ? ` Last error: ${cloud.lastError}` : "";
+  setCloudStatus(`Signed in as ${cloud.user.email || "user"}. No family space auto-loaded. Use Create shared family space or Join existing family space below.${reason}`, "warn");
   renderCloudPanel();
   return false;
 }
@@ -2649,30 +2684,64 @@ async function connectFamily(familyId) {
   await ensureFirebase();
   if (!cloud.user) throw new Error("Sign in first.");
 
-  familyId = familyId.trim().toUpperCase();
+  familyId = String(familyId || "").trim().toUpperCase();
+  if (!familyId) throw new Error("Missing Family ID.");
+
   cloud.familyId = familyId;
   localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
+  setCloudStatus(`Connecting to family space ${familyId}...`, "warn");
 
   if (cloud.unsubscribeState) cloud.unsubscribeState();
+  if (cloud.unsubscribeMembers) cloud.unsubscribeMembers();
+  if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
+  cloud.unsubscribeState = null;
+  cloud.unsubscribeMembers = null;
+  cloud.unsubscribeFamily = null;
 
   const familyRef = cloud.fb.doc(cloud.db, "families", familyId);
-  const familySnap = await cloud.fb.getDoc(familyRef);
-  if (familySnap.exists()) {
-    cloud.familyDoc = familySnap.data();
-    await saveUserCurrentFamily(familyId, cloud.user.uid === cloud.familyDoc.createdBy ? "owner" : "member");
+
+  let familySnap;
+  try {
+    familySnap = await withTimeout(
+      cloud.fb.getDoc(familyRef),
+      9000,
+      "Timed out while reading family space. Check Firestore rules and internet connection."
+    );
+  } catch (error) {
+    cloud.ready = false;
+    const msg = error.message || String(error);
+    if (/permission|insufficient/i.test(msg)) {
+      throw new Error(`Firestore blocked reading family space ${familyId}. Publish the V4.8.8 firestore.rules file, then refresh.`);
+    }
+    throw error;
   }
 
-  if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
+  if (!familySnap.exists()) {
+    cloud.ready = false;
+    throw new Error(`Family space ${familyId} was not found.`);
+  }
+
+  cloud.familyDoc = familySnap.data();
+
+  await ensureOwnerMemberRecord(familyId, cloud.familyDoc);
+
+  await saveUserCurrentFamily(
+    familyId,
+    cloud.user.uid === cloud.familyDoc.createdBy ? "owner" : "member"
+  ).catch(error => {
+    cloud.lastError = error.message;
+  });
+
   cloud.unsubscribeFamily = cloud.fb.onSnapshot(familyRef, snap => {
     if (!snap.exists()) return;
     cloud.familyDoc = snap.data();
-    applyFamilyCalendarPreference();
+    if (typeof applyFamilyCalendarPreference === "function") applyFamilyCalendarPreference();
     renderCloudPanel();
-    renderGoogleCalendar();
-    applyRoleBasedView();
+    if (typeof renderGoogleCalendar === "function") renderGoogleCalendar();
+    if (typeof applyRoleBasedView === "function") applyRoleBasedView();
   }, error => {
     cloud.lastError = error.message;
-    setCloudStatus(`Could not load family settings: ${error.message}`, "bad");
+    setCloudStatus(`Could not listen to family settings: ${error.message}`, "bad");
   });
 
   cloud.stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
@@ -2680,8 +2749,14 @@ async function connectFamily(familyId) {
   const membersRef = cloud.fb.collection(cloud.db, "families", familyId, "members");
   cloud.unsubscribeMembers = cloud.fb.onSnapshot(membersRef, snapshot => {
     cloud.members = snapshot.docs.map(docSnap => ({ uid: docSnap.id, ...docSnap.data() }));
-    autoAssignCurrentUserRole().catch(error => { cloud.lastError = error.message; });
+    if (typeof autoAssignCurrentUserRole === "function") {
+      autoAssignCurrentUserRole().catch(error => { cloud.lastError = error.message; });
+    }
     renderFamilyMembers();
+    if (typeof renderRoleSetupPanel === "function") renderRoleSetupPanel();
+    if (typeof applyRoleBasedView === "function") applyRoleBasedView();
+    if (typeof renderKidDashboard === "function") renderKidDashboard();
+    if (typeof renderKidRequests === "function") renderKidRequests();
   }, error => {
     cloud.lastError = error.message;
     setCloudStatus(`Could not load family members: ${error.message}`, "bad");
@@ -2690,7 +2765,24 @@ async function connectFamily(familyId) {
   startPresenceHeartbeat();
 
   cloud.unsubscribeState = cloud.fb.onSnapshot(cloud.stateRef, snap => {
-    if (!snap.exists()) return;
+    if (!snap.exists()) {
+      // If state document is missing, create it from local/default state.
+      if (cloud.user) {
+        cloud.fb.setDoc(cloud.stateRef, {
+          data: state,
+          updatedAt: cloud.fb.serverTimestamp(),
+          updatedBy: cloud.user.uid
+        }, { merge: true }).catch(error => {
+          cloud.lastError = error.message;
+          setCloudStatus(`Could not create family state: ${error.message}`, "bad");
+        });
+      }
+      cloud.ready = true;
+      setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
+      renderCloudPanel();
+      return;
+    }
+
     const incoming = snap.data();
     if (!incoming || !incoming.data) return;
 
@@ -2699,15 +2791,16 @@ async function connectFamily(familyId) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.ready = true;
     cloud.applyingRemote = false;
+    setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
     render();
   }, error => {
     cloud.ready = false;
     cloud.lastError = error.message;
-    setCloudStatus(`Cloud sync error: ${error.message}`, "bad");
+    setCloudStatus(`Cloud sync error for ${familyId}: ${error.message}`, "bad");
   });
 
   cloud.ready = true;
-  await autoAssignCurrentUserRole().catch(error => { cloud.lastError = error.message; });
+  setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
   renderCloudPanel();
 }
 

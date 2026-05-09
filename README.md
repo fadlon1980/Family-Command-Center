@@ -1,40 +1,46 @@
-# Family Command Center PWA V4.8.7 — Family Space Loading Fix
+# Family Command Center PWA V4.8.8 — Family Space Connection Repair
 
-This hotfix fixes the issue where the app stays on:
+This version fixes the issue where the app stays on:
 
 ```text
-Signed in as ... Loading family space...
+Signed in as ... Connecting to family space FAM-...
 ```
 
-## Fixed in V4.8.7
+## What changed
 
-- After Google login, the app actively checks for your family space.
-- It tries:
-  1. Saved local family ID
-  2. Firestore user profile `users/{uid}.currentFamilyId`
-- If a family space is found, it reconnects immediately.
-- If no family space is found, it clearly tells you to create or join a family space.
-- The old “Loading family space...” message no longer stays forever.
-- Stable storage keys are preserved.
+- Added safer family-space connection flow
+- Added timeout and clearer Firestore errors
+- Added owner member repair logic
+- If the signed-in user is the family creator, the app can recreate/repair their member record
+- Updated `firestore.rules` so the family creator can read/update the family space even if their member record is missing
+- Updated rules allow the family owner to repair member docs and access family state
+
+## Important: Publish updated Firestore rules
+
+You must publish the included `firestore.rules` file.
+
+Go to:
+
+```text
+Firebase Console → Firestore Database → Rules
+```
+
+Paste the full content of `firestore.rules`, then click **Publish**.
 
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-7
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-8
 ```
 
 ## Expected result
 
-After Google sign-in, you should see either:
+After sign-in, you should see:
 
 ```text
-Cloud sync active for fadlon1980@gmail.com. Family ID: FAM-...
+Cloud sync active for fadlon1980@gmail.com. Family ID: FAM-59ATQF5R
 ```
 
-or:
+## No local storage key change
 
-```text
-Signed in as fadlon1980@gmail.com. No family space auto-loaded. Use Create shared family space or Join existing family space below.
-```
-
-No Firestore rules change is required.
+Stable local storage keys are preserved.

@@ -1,20 +1,35 @@
-# V4.8.7 Setup Notes
+# V4.8.8 Setup Notes
 
-No Firestore rules change is required.
+This version requires a Firestore rules update.
 
-After upload, open:
+## Step 1 — Upload V4.8.8 files to GitHub Pages
+
+Upload all files from the V4.8.8 package.
+
+## Step 2 — Publish the new Firestore rules
+
+Open Firebase Console:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-7
+Firestore Database → Rules
 ```
 
-Then test:
+Paste the full content from the included file:
 
-1. Go to Settings.
-2. Sign in with Google.
-3. Wait 3–5 seconds.
-4. Confirm the status changes from checking/loading to either:
-   - Cloud sync active
-   - or a clear instruction to create/join a family space
+```text
+firestore.rules
+```
 
-If it asks you to join, enter your existing Family ID and Invite Code once.
+Click **Publish**.
+
+## Step 3 — Open the app
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-8
+```
+
+## Why this rule update matters
+
+If the owner member record is missing or broken, old rules may block the owner from reading the family space.
+
+V4.8.8 allows the original family creator to reconnect and repair their owner member record.

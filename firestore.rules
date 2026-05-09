@@ -1,13 +1,7 @@
 rules_version = '2';
 
-// V4.8.4 note: automatic role assignment stores roleConfig under families/{familyId}.
-// Existing family member write access allows family admins/parents to save this from the app UI.
-
-// V4.7 note: family calendar configuration is stored on families/{familyId}.calendarConfig.
-// Existing family member write access allows parents/admins to save this from the app UI.
-
-// V4.6 note: role-based panel hiding is enforced in the app UI for the family pilot.
-// A future production version should split items into separate documents and enforce parent/kid roles here.
+// V4.8.8 rules: allow the family creator/owner to reconnect and repair their member record.
+// This prevents lockout if the owner member document is missing or was not created correctly.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -20,6 +14,10 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
     }
 
+    function isOwner(familyId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/families/$(familyId)).data.createdBy == request.auth.uid;
+    }
 
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
@@ -29,22 +27,35 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid;
 
-      allow read, update: if isMember(familyId);
+      // Members can read/update. The original creator can also read/update even if their member record is missing.
+      allow read, update: if isMember(familyId)
+        || (signedIn() && resource.data.createdBy == request.auth.uid);
+
       allow delete: if false;
 
       match /members/{uid} {
-        allow read: if isMember(familyId) || (signedIn() && request.auth.uid == uid);
+        allow read: if isMember(familyId)
+          || isOwner(familyId)
+          || (signedIn() && request.auth.uid == uid);
 
-        // A new user can join only when they know the Family ID and the Invite Code.
+        // A user can create their own member record if they know the invite code.
+        // The family owner can also create/repair their own member record.
         allow create: if signedIn()
           && request.auth.uid == uid
-          && request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode;
+          && (
+            isOwner(familyId)
+            || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
+          );
 
-        allow update, delete: if signedIn() && request.auth.uid == uid;
+        // Users can update their own member record. Owner can also manage member docs.
+        allow update: if (signedIn() && request.auth.uid == uid)
+          || isOwner(familyId);
+
+        allow delete: if isOwner(familyId);
       }
 
       match /state/{docId} {
-        allow read, write: if isMember(familyId);
+        allow read, write: if isMember(familyId) || isOwner(familyId);
       }
     }
   }
