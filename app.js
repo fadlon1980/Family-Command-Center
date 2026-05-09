@@ -2565,6 +2565,12 @@ function scheduleFamilySpaceStatusCheck() {
       await recoverFamilySpaceAfterLogin().catch(error => {
         setCloudStatus(`Signed in, but family space loading failed: ${error.message}`, "bad");
       });
+
+      if (!cloud.ready && (cloud.familyId || getStoredFamilyId())) {
+        await activateCloudFromReadableData().catch(error => {
+          addDiagnostic("Auto activation fallback", error, "warn");
+        });
+      }
     }
   }, 1200);
 }
@@ -2683,7 +2689,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.10";
+const APP_VERSION = "4.8.11";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -2842,6 +2848,122 @@ async function copyDiagnosticReport() {
   }
 }
 
+
+async function activateCloudFromReadableData(familyId = cloud.familyId || getStoredFamilyId()) {
+  await ensureFirebase();
+
+  if (!cloud.user) {
+    throw new Error("Sign in first before activating cloud sync.");
+  }
+
+  familyId = String(familyId || "").trim().toUpperCase();
+  if (!familyId) {
+    throw new Error("No Family ID is available.");
+  }
+
+  const familyRef = cloud.fb.doc(cloud.db, "families", familyId);
+  const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+  const membersRef = cloud.fb.collection(cloud.db, "families", familyId, "members");
+
+  const familySnap = await withTimeout(cloud.fb.getDoc(familyRef), 8000, "Reading family document timed out during activation.");
+  if (!familySnap.exists()) throw new Error(`Family document ${familyId} was not found.`);
+
+  const memberRef = cloud.fb.doc(cloud.db, "families", familyId, "members", cloud.user.uid);
+  const memberSnap = await withTimeout(cloud.fb.getDoc(memberRef), 8000, "Reading member record timed out during activation.");
+  if (!memberSnap.exists()) throw new Error("Your member record is missing. Join the family space again or repair the member record.");
+
+  const stateSnap = await withTimeout(cloud.fb.getDoc(stateRef), 8000, "Reading shared state timed out during activation.");
+  if (!stateSnap.exists() || !stateSnap.data()?.data) {
+    throw new Error("Shared family state document is missing or empty.");
+  }
+
+  // Stop old listeners before activating fresh listeners.
+  if (cloud.unsubscribeState) cloud.unsubscribeState();
+  if (cloud.unsubscribeMembers) cloud.unsubscribeMembers();
+  if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
+  cloud.unsubscribeState = null;
+  cloud.unsubscribeMembers = null;
+  cloud.unsubscribeFamily = null;
+
+  cloud.familyId = familyId;
+  cloud.familyDoc = familySnap.data();
+  cloud.stateRef = stateRef;
+  cloud.members = [];
+
+  state = normalizeState(stateSnap.data().data);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(CLOUD_FAMILY_ID_KEY, familyId);
+
+  cloud.ready = true;
+  cloud.lastError = "";
+  setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
+
+  // Start live listeners, but do not make the UI inactive if a listener has a delayed response.
+  cloud.unsubscribeFamily = cloud.fb.onSnapshot(familyRef, snap => {
+    if (!snap.exists()) return;
+    cloud.familyDoc = snap.data();
+    if (typeof applyFamilyCalendarPreference === "function") applyFamilyCalendarPreference();
+    renderCloudPanel();
+    if (typeof renderGoogleCalendar === "function") renderGoogleCalendar();
+    if (typeof applyRoleBasedView === "function") applyRoleBasedView();
+  }, error => {
+    cloud.lastError = error.message;
+    addDiagnostic("Family settings listener", error, "warn");
+  });
+
+  cloud.unsubscribeMembers = cloud.fb.onSnapshot(membersRef, snapshot => {
+    cloud.members = snapshot.docs.map(docSnap => ({ uid: docSnap.id, ...docSnap.data() }));
+    if (typeof autoAssignCurrentUserRole === "function") {
+      autoAssignCurrentUserRole().catch(error => { cloud.lastError = error.message; });
+    }
+    renderFamilyMembers();
+    if (typeof renderRoleSetupPanel === "function") renderRoleSetupPanel();
+    if (typeof applyRoleBasedView === "function") applyRoleBasedView();
+    if (typeof renderKidDashboard === "function") renderKidDashboard();
+    if (typeof renderKidRequests === "function") renderKidRequests();
+  }, error => {
+    cloud.lastError = error.message;
+    addDiagnostic("Family members listener", error, "warn");
+  });
+
+  cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
+    if (!snap.exists() || !snap.data()?.data) return;
+    cloud.applyingRemote = true;
+    state = normalizeState(snap.data().data);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    cloud.applyingRemote = false;
+    cloud.ready = true;
+    render();
+  }, error => {
+    cloud.lastError = error.message;
+    addDiagnostic("Shared state listener", error, "warn");
+  });
+
+  if (typeof startPresenceHeartbeat === "function") startPresenceHeartbeat();
+  render();
+
+  addDiagnosticInfo(
+    "Cloud activation",
+    "Cloud sync activated from readable data",
+    "Family document, member record, and shared state were all readable, so the app activated cloud sync directly.",
+    "You can now use the app. If it disconnects later, run diagnostics again.",
+    "good",
+    `familyId=${familyId}`
+  );
+
+  return true;
+}
+
+async function activateCloudFromDiagnosticsButton() {
+  try {
+    await activateCloudFromReadableData();
+  } catch (error) {
+    addDiagnostic("Cloud activation", error, "bad");
+    setCloudStatus(`Could not activate cloud sync: ${error.message}`, "bad");
+  }
+}
+
+
 async function runConnectionDiagnostics() {
   diagnostics.entries = [];
   renderDiagnostics();
@@ -2929,11 +3051,19 @@ async function runConnectionDiagnostics() {
     if (cloud.ready) {
       addDiagnosticInfo("Cloud sync", "Cloud sync active", "The app currently considers cloud sync active.", "", "good");
     } else {
-      addDiagnostic("Cloud sync", "Cloud sync is not active yet.", "warn", {
-        title: "Cloud sync not active",
-        cause: "The app is signed in and has a Family ID, but the shared data listener did not fully activate.",
-        action: "Click Reconnect now. If it fails, copy this diagnostic report."
-      });
+      addDiagnosticInfo(
+        "Cloud sync",
+        "Readable data found, activating sync",
+        "Family document, your member record, and shared data are all readable. The app will now activate sync directly.",
+        "If activation does not complete, click Activate sync from readable data.",
+        "warn"
+      );
+
+      try {
+        await activateCloudFromReadableData(familyId);
+      } catch (activationError) {
+        addDiagnostic("Cloud activation", activationError, "bad");
+      }
     }
   } catch (error) {
     addDiagnostic("Family document", error, "bad");
@@ -2949,6 +3079,7 @@ function wireDiagnosticsControls() {
   document.getElementById("runDiagnosticsBtn")?.addEventListener("click", runConnectionDiagnostics);
   document.getElementById("copyDiagnosticsBtn")?.addEventListener("click", copyDiagnosticReport);
   document.getElementById("clearDiagnosticsBtn")?.addEventListener("click", clearDiagnostics);
+  document.getElementById("activateCloudBtn")?.addEventListener("click", activateCloudFromDiagnosticsButton);
 }
 
 

@@ -1,59 +1,44 @@
-# Family Command Center PWA V4.8.10 — Friendly Diagnostics
+# Family Command Center PWA V4.8.11 — Cloud Activation Fix
 
-This version adds a dedicated diagnostics panel to help identify why the app freezes or behaves unexpectedly.
-
-## New in V4.8.10
-
-Settings now includes:
+This version fixes the case shown by this diagnostic pattern:
 
 ```text
-Diagnostics & friendly errors
+Family document readable: GOOD
+Member record readable: GOOD
+Shared data readable: GOOD
+Cloud ready: false
 ```
 
-With buttons:
+## What changed
 
-- **Run connection check**
-- **Copy diagnostic report**
-- **Clear diagnostics**
+- If the app can directly read:
+  - the family document
+  - your member record
+  - the shared family state
+- then it activates cloud sync directly instead of waiting forever for a listener state.
 
-## What it checks
+## New diagnostics action
 
-- App version and URL
-- Firebase config loaded
-- Firebase SDK initialized
-- Google sign-in state
-- Saved Family ID
-- Family document readability
-- Current user member record
-- Shared family state document
-- Cloud sync readiness
-
-## Friendly error explanations
-
-The app now translates technical errors into clear actions for:
-
-- Firestore permission problems
-- Missing family document
-- Missing member record
-- Missing shared state
-- Network/timeouts
-- Popup blocked
-- Unauthorized domain
-- Google API key website restriction
-- Calendar API disabled/blocked
-- Missing Firebase config
-- JavaScript errors
-
-## Use after upload
+Settings → Diagnostics & friendly errors now includes:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-10
+Activate sync from readable data
 ```
 
-Then go to:
+This manually activates cloud sync when the diagnostic checks show all data is readable.
+
+## Open after upload
 
 ```text
-Settings → Diagnostics & friendly errors → Run connection check
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-11
 ```
 
-If you need help, click **Copy diagnostic report** and paste it into ChatGPT.
+## What to do
+
+1. Upload V4.8.11.
+2. Open the URL above.
+3. Go to Settings.
+4. Click Run connection check.
+5. If needed, click Activate sync from readable data.
+
+No Firestore rules change is required if V4.8.8+ rules are already published.
