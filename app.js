@@ -1932,8 +1932,8 @@ async function autoAssignCurrentUserRole() {
 }
 
 async function applyRoleRulesToAllMembers() {
-  if (!isFamilyAdminUser()) {
-    alert("Only family admins can apply role rules.");
+  if (!isRoleSetupManager()) {
+    alert("Only family owner/admin can apply role rules.");
     return;
   }
 
@@ -1962,19 +1962,47 @@ async function applyRoleRulesToAllMembers() {
   alert("Role rules were applied to current family members.");
 }
 
+
+function isRoleSetupManager() {
+  if (!cloud || !cloud.user) return false;
+
+  const email = String(cloud.user.email || "").toLowerCase();
+  const adminEmails = typeof getConfiguredAdminEmails === "function" ? getConfiguredAdminEmails() : [];
+  if (adminEmails.includes(email)) return true;
+
+  const member = typeof getCurrentMemberRecord === "function" ? getCurrentMemberRecord() : null;
+  const role = String(member?.role || "").toLowerCase();
+
+  if (["owner", "admin"].includes(role)) return true;
+  if (cloud.familyDoc?.createdBy && cloud.familyDoc.createdBy === cloud.user.uid) return true;
+
+  return false;
+}
+
+
 function renderRoleSetupPanel() {
   const panel = document.getElementById("roleSetupPanel");
   const parentInput = document.getElementById("parentEmailsInput");
   const kidInput = document.getElementById("kidMappingsInput");
   const defaultSelect = document.getElementById("defaultRoleSelect");
   const summary = document.getElementById("roleRulesSummary");
+  const note = document.getElementById("roleSetupVisibilityNote");
 
   if (!panel) return;
 
-  const show = Boolean(cloud.user && cloud.familyId && isFamilyAdminUser());
+  const signedIn = Boolean(cloud.user);
+  const inFamily = Boolean(cloud.familyId);
+  const canManage = isRoleSetupManager();
+
+  const show = signedIn && inFamily && canManage;
   panel.classList.toggle("hidden", !show);
 
-  if (!show) return;
+  if (!show) {
+    if (signedIn && inFamily && note) {
+      note.textContent = "Automatic role assignment is hidden because this account is not recognized as owner/admin.";
+    }
+    return;
+  }
 
   const cfg = getRoleConfig();
 
@@ -1995,16 +2023,22 @@ function renderRoleSetupPanel() {
 
   if (summary) {
     summary.innerHTML = `
+      <div><strong>Signed in as:</strong> ${escapeHtml(cloud.user.email || "unknown")}</div>
+      <div><strong>Your role:</strong> ${escapeHtml(getCurrentRole ? getCurrentRole() : "owner/admin")}</div>
       <div><strong>Parents/admin emails:</strong> ${cfg.parentEmails.length ? escapeHtml(cfg.parentEmails.join(", ")) : "None configured"}</div>
       <div><strong>Kid mappings:</strong> ${cfg.kidMappings.length ? escapeHtml(cfg.kidMappings.map(k => `${k.email} → ${k.childName}`).join(", ")) : "None configured"}</div>
       <div><strong>Default unknown role:</strong> ${escapeHtml(cfg.defaultRole || "viewer")}</div>
     `;
   }
+
+  if (note) {
+    note.textContent = "Visible because you are recognized as family owner/admin.";
+  }
 }
 
 async function saveRoleSetupFromForm() {
-  if (!isFamilyAdminUser()) {
-    alert("Only family admins can save role rules.");
+  if (!isRoleSetupManager()) {
+    alert("Only family owner/admin can save role rules.");
     return;
   }
 

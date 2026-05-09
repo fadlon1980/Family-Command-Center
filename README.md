@@ -1,60 +1,31 @@
-# Family Command Center PWA V4.8.4 — Automatic Role Assignment
+# Family Command Center PWA V4.8.5 — Owner Role Setup Visibility Hotfix
 
-This version adds automatic role assignment based on email mappings in Settings.
+This hotfix makes the **Automatic role assignment** section visible for the family owner.
 
-## New in V4.8.4
+## Fixed in V4.8.5
 
-- New Settings panel: **Automatic role assignment**
-- Parent/Admin emails list
-- Kid email → child name mapping
-- Default role for unknown new members
-- Button to re-apply role rules to current members
-- Auto role assignment after Google login / family space connection
+- Owner can see Automatic role assignment.
+- Admins can see Automatic role assignment.
+- Emails listed in `FAMILY_ADMIN_EMAILS` can see Automatic role assignment.
+- The Settings panel now shows your signed-in email and detected role in the role rules summary.
+- The role setup renderer is called directly after each render and after family members load.
 
-## Recommended setup
-
-In Settings → Automatic role assignment:
-
-### Parent/Admin emails
+## Open after upload
 
 ```text
-elad@gmail.com
-maayan@gmail.com
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-5
 ```
 
-### Kid mappings
+## What you should see
 
-```text
-kid1@gmail.com = Maya
-kid2@gmail.com = Daniel
-kid3@gmail.com = Noam
-```
+Settings → Automatic role assignment
 
-### Default unknown role
+Fields:
 
-Recommended:
-
-```text
-viewer
-```
-
-## Assignment logic
-
-```text
-Family creator → owner
-Email in parent list → parent
-Email in kid mapping → kid + linked child
-Unknown email → default role, recommended viewer
-```
-
-## Important
-
-This keeps the stable storage keys from V4.8.1 and the Calendar fixes from V4.8.3.
+- Parent/Admin emails
+- Kid email to child mapping
+- Default role for unknown users
+- Save role rules
+- Re-apply role rules now
 
 No Firestore rules change is required.
-
-## Test URL
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-4
-```
