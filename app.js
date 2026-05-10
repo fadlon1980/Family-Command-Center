@@ -2765,7 +2765,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.17";
+const APP_VERSION = "4.8.18";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3205,6 +3205,147 @@ async function timedStep(label, promise, ms = 9000) {
 
 
 
+
+function getFirestoreProjectId() {
+  return window.FAMILY_FIREBASE_CONFIG?.projectId
+    || window.firebaseConfig?.projectId
+    || window.FIREBASE_CONFIG?.projectId
+    || "";
+}
+
+function firestoreRestValue(value) {
+  if (value === null || value === undefined) return { nullValue: null };
+
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "boolean") return { booleanValue: value };
+
+  if (typeof value === "number") {
+    if (Number.isInteger(value)) return { integerValue: String(value) };
+    return { doubleValue: value };
+  }
+
+  if (value instanceof Date) return { timestampValue: value.toISOString() };
+
+  if (Array.isArray(value)) {
+    return {
+      arrayValue: {
+        values: value.map(item => firestoreRestValue(item))
+      }
+    };
+  }
+
+  if (typeof value === "object") {
+    const fields = {};
+    Object.entries(value).forEach(([key, val]) => {
+      if (typeof val !== "undefined") fields[key] = firestoreRestValue(val);
+    });
+    return { mapValue: { fields } };
+  }
+
+  return { stringValue: String(value) };
+}
+
+function firestoreRestFields(object) {
+  const fields = {};
+  Object.entries(object || {}).forEach(([key, value]) => {
+    if (typeof value !== "undefined") fields[key] = firestoreRestValue(value);
+  });
+  return fields;
+}
+
+function encodeDocPath(path) {
+  return String(path || "")
+    .split("/")
+    .filter(Boolean)
+    .map(part => encodeURIComponent(part))
+    .join("/");
+}
+
+async function firestoreRestPatch(docPath, fieldsObject, timeoutMs = 20000) {
+  if (!cloud.user) throw new Error("Not signed in.");
+
+  const projectId = getFirestoreProjectId();
+  if (!projectId) throw new Error("Missing Firebase projectId for REST write.");
+
+  const token = await cloud.user.getIdToken(true);
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${encodeDocPath(docPath)}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ fields: firestoreRestFields(fieldsObject) }),
+      signal: controller.signal
+    });
+
+    const text = await response.text();
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
+
+    if (!response.ok) {
+      const message = payload?.error?.message || response.statusText || text || "Unknown REST write error";
+      throw new Error(`REST write failed ${response.status}: ${message}`);
+    }
+
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function testRestCloudWrite() {
+  setButtonBusy("testRestCloudWriteBtn", true, "Testing REST...");
+  try {
+    await ensureFirebase();
+
+    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+    if (!cloud.user || !familyId) throw new Error("Sign in and connect to a family space first.");
+
+    const started = performance.now();
+    await firestoreRestPatch(
+      `families/${familyId}/state/restWriteTest_${cloud.user.uid}`,
+      {
+        ok: true,
+        method: "REST",
+        email: cloud.user.email || "",
+        uid: cloud.user.uid,
+        clientTestedAt: new Date().toISOString(),
+        appVersion: APP_VERSION
+      },
+      20000
+    );
+
+    const duration = Math.round(performance.now() - started);
+    setCloudStep(`REST cloud write test succeeded in ${duration} ms.`, "good");
+    addDiagnosticInfo(
+      "REST cloud write",
+      "REST write succeeded",
+      "The browser can write to Firestore using the REST fallback.",
+      "Use Retry full save. V4.8.18 will use REST fallback if the normal SDK write times out.",
+      "good",
+      `duration=${duration}ms`
+    );
+    return true;
+  } catch (error) {
+    addDiagnostic("REST cloud write", error, "bad", {
+      title: "REST write failed",
+      cause: "The browser could not write to Firestore even using the REST fallback.",
+      action: "This points to Firestore rules/auth/network restrictions. Confirm V4.8.15+ rules are published and test from another network/browser."
+    });
+    setCloudStep(`REST cloud write test failed: ${error.message}`, "bad");
+    return false;
+  } finally {
+    setButtonBusy("testRestCloudWriteBtn", false);
+  }
+}
+
+
 function formatBytes(bytes) {
   const value = Number(bytes || 0);
   if (value < 1024) return `${value} B`;
@@ -3253,8 +3394,9 @@ async function testCloudWrite() {
       cause: "This device could not write even a small test document to Firestore.",
       action: "Check Firestore rules, internet connection, and whether V4.8.15 rules are published."
     });
-    setCloudStep(`Small cloud write test failed: ${error.message}`, "bad");
-    return false;
+    setCloudStep(`Small SDK write failed: ${error.message}. Trying REST fallback...`, "warn");
+    const restOk = await testRestCloudWrite();
+    return restOk;
   } finally {
     setButtonBusy("testCloudWriteBtn", false);
   }
@@ -3285,19 +3427,43 @@ async function retryFullSaveLonger() {
 
     cloud.saveInProgress = true;
 
-    await withTimeout(
-      cloud.fb.setDoc(cloud.stateRef, {
-        data: state,
-        updatedAt: cloud.fb.serverTimestamp(),
-        updatedBy: cloud.user.uid,
-        updatedByEmail: cloud.user.email || "",
-        clientUpdatedAt: new Date().toISOString(),
-        clientSummary: summary,
-        appVersion: APP_VERSION
-      }, { merge: true }),
-      30000,
-      "Full shared family save timed out after 30 seconds."
-    );
+    try {
+      await withTimeout(
+        cloud.fb.setDoc(cloud.stateRef, {
+          data: state,
+          updatedAt: cloud.fb.serverTimestamp(),
+          updatedBy: cloud.user.uid,
+          updatedByEmail: cloud.user.email || "",
+          clientUpdatedAt: new Date().toISOString(),
+          clientSummary: summary,
+          appVersion: APP_VERSION,
+          writeMethod: "SDK"
+        }, { merge: true }),
+        30000,
+        "Full shared family save timed out after 30 seconds."
+      );
+    } catch (sdkError) {
+      addDiagnostic("Retry full save", sdkError, "warn", {
+        title: "SDK full save timed out",
+        cause: "Normal Firestore SDK save did not complete.",
+        action: "Retry full save using REST fallback now."
+      });
+
+      setCloudStep("SDK full save timed out. Trying REST fallback save...", "warn");
+      await firestoreRestPatch(
+        `families/${familyId}/state/main`,
+        {
+          data: state,
+          updatedBy: cloud.user.uid,
+          updatedByEmail: cloud.user.email || "",
+          clientUpdatedAt: new Date().toISOString(),
+          clientSummary: summary,
+          appVersion: APP_VERSION,
+          writeMethod: "REST fallback"
+        },
+        30000
+      );
+    }
 
     cloud.pendingLocalChanges = false;
     cloud.lastCloudSaveAt = new Date().toISOString();
@@ -3853,6 +4019,49 @@ async function saveCloudNow(force = false) {
     return true;
   } catch (error) {
     cloud.lastError = error.message;
+
+    try {
+      setCloudStatus("SDK save failed, trying REST fallback...", "warn");
+      const summary = stateSummaryForDiagnostics();
+      const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+
+      await firestoreRestPatch(
+        `families/${familyId}/state/main`,
+        {
+          data: state,
+          updatedBy: cloud.user.uid,
+          updatedByEmail: cloud.user.email || "",
+          clientUpdatedAt: new Date().toISOString(),
+          clientSummary: summary,
+          appVersion: APP_VERSION,
+          writeMethod: "REST fallback"
+        },
+        30000
+      );
+
+      cloud.pendingLocalChanges = false;
+      cloud.lastCloudSaveAt = new Date().toISOString();
+      cloud.lastSyncDurationMs = performance.now() - started;
+      setCloudStatus(`Cloud sync active. REST fallback save completed: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`, "good");
+      addDiagnosticInfo(
+        "Cloud save",
+        "REST fallback save succeeded",
+        "The normal Firestore SDK write timed out, but the REST fallback saved the shared family data.",
+        "Ask Maayan to click Pull latest from cloud.",
+        "good",
+        `duration=${Math.round(cloud.lastSyncDurationMs)}ms`
+      );
+      renderSyncHealth();
+      return true;
+    } catch (restError) {
+      cloud.lastError = restError.message;
+      addDiagnostic("Cloud save", restError, "bad", {
+        title: "SDK and REST cloud save both failed",
+        cause: "The app could not save with the normal Firestore SDK or the REST fallback.",
+        action: "Check Firestore rules, auth, network restrictions, VPN/proxy, or test from another browser/network."
+      });
+    }
+
     addDiagnostic("Cloud save", error, "bad", {
       title: "Cloud save failed or timed out",
       cause: "The app tried to save your changes to Firestore but the save did not complete quickly.",

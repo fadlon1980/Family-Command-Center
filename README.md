@@ -1,44 +1,47 @@
-# Family Command Center PWA V4.8.17 — Cloud Write Test & Save Retry
+# Family Command Center PWA V4.8.18 — REST Write Fallback
 
-This version helps diagnose why changes stay local and do not reach Firestore.
-
-## Problem this version targets
-
-Sync health may show:
+This version targets the issue:
 
 ```text
-no save from this device yet
-last sync took 10005 ms
-local changes waiting to save
+Small cloud write test failed: Small cloud write test timed out.
 ```
 
-That means the app can read cloud data but the write to Firestore is timing out.
+## What this means
 
-## New buttons
+The app can read Firestore, but the normal Firestore SDK write channel is hanging or blocked.
 
-Settings → Cloud sync health now includes:
+Common causes:
 
-- **Test cloud write**
+- Browser/network/VPN/proxy blocks Firestore WebChannel writes
+- Firewall/security software interferes with Firestore SDK write connection
+- Firestore SDK write hangs even though REST/fetch may work
+
+## New in V4.8.18
+
+Settings → Cloud sync health includes:
+
+- **Test SDK write**
+- **Test REST write**
 - **Retry full save**
 
-## How to use
+If the SDK write times out, the app tries Firestore REST fallback.
 
-1. Add or edit an item.
-2. Go to Settings → Cloud sync health.
-3. Click **Test cloud write**.
+## How to test
 
-If test cloud write fails:
-- the problem is Firestore rules, internet, or auth.
-
-If test cloud write succeeds:
-- this device can write to Firestore.
-- click **Retry full save**.
-- if full save still fails, the shared `state/main` document may be too large/slow and the next architecture step should split data into separate Firestore documents.
-
-## Open after upload
+1. Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-17
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-18
 ```
 
-No Firestore rules change is required if V4.8.15 rules are already published.
+2. Go to Settings → Cloud sync health.
+3. Click **Test SDK write**.
+4. If it fails, click **Test REST write**.
+5. If REST write succeeds, click **Retry full save**.
+6. Check Firestore:
+   `families → FAM-59ATQF5R → state → main`
+7. Ask Maayan to click **Pull latest from cloud**.
+
+## If REST write also fails
+
+This points to Firestore rules/auth/network restrictions. Confirm V4.8.15+ rules are published and test from a different browser or network.

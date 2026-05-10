@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.17",
+  "name": "Family Command Center V4.8.18",
   "short_name": "Family Hub",
-  "description": "Cloud write test and longer full-save retry for debugging sync save timeouts.",
+  "description": "REST write fallback for Firestore SDK write timeouts.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
