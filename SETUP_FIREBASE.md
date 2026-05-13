@@ -1,22 +1,34 @@
-# V4.8.18 Setup Notes
+# V4.8.20 Rollback Setup Notes
 
-No Firestore rules change is required if V4.8.15 rules are already published.
+## Step 1 — Upload to GitHub
 
-## Test write path
+Upload all files from this package to your GitHub Pages repository.
 
-1. Open:
-   https://fadlon1980.github.io/Family-Command-Center/?version=4-8-18
+## Step 2 — Firestore rules
 
-2. Settings → Cloud sync health
+If V4.8.15 rules are already published, you can skip this.
 
-3. Click:
-   Test SDK write
+Otherwise go to:
 
-4. If SDK write times out, click:
-   Test REST write
+```text
+Firebase Console → Firestore Database → Rules
+```
 
-5. If REST succeeds, click:
-   Retry full save
+Paste the full content of `firestore.rules` from this package and click **Publish**.
 
-6. Check Firestore:
-   families → FAM-59ATQF5R → state → main
+## Step 3 — Open rollback version
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-20
+```
+
+## Step 4 — Test only Elad → Firestore first
+
+1. Sign in as Elad.
+2. Run connection diagnostics.
+3. Add Shopping item: `ROLLBACK TEST ELAD 001`
+4. Wait 5 seconds.
+5. Check Firebase:
+   `families → FAM-59ATQF5R → state → main → data → shopping`
+
+Do not test Maayan until Elad → Firestore works.

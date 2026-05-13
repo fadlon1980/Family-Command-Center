@@ -1,7 +1,6 @@
 rules_version = '2';
 
-// V4.8.15 rules: fixed owner emails are recognized by Firestore rules too.
-// This lets Maayan repair/promote her own member record even if it currently says viewer.
+// V4.8.20 rollback package keeps V4.8.15 owner-aware Firestore rules.
 // Fixed owner emails:
 // - fadlon1980@gmail.com
 // - fadlonmay@gmail.com
@@ -67,11 +66,6 @@ service cloud.firestore {
           || isFixedOwnerEmail()
           || (signedIn() && request.auth.uid == uid);
 
-        // Join/repair:
-        // - original creator can repair/create member records
-        // - fixed owner emails can repair/create member records
-        // - family manager can manage members
-        // - user can create own member if they know invite code
         allow create: if signedIn()
           && (
             isFamilyManager(familyId)
@@ -85,8 +79,6 @@ service cloud.firestore {
             )
           );
 
-        // Family manager or fixed owner may update member roles.
-        // A normal user may update own profile/presence only if role does not change.
         allow update: if isFamilyManager(familyId)
           || (
             signedIn()

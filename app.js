@@ -15,12 +15,6 @@ const LEGACY_CLOUD_FAMILY_ID_KEYS = [
 ];
 const FIREBASE_SDK_VERSION = "12.13.0";
 
-const FIXED_FAMILY_OWNER_EMAILS = [
-  "fadlon1980@gmail.com",
-  "fadlonmay@gmail.com"
-];
-
-
 const LEGACY_STATE_KEYS = [
   "family-command-center-v4-8",
   "family-command-center-v4-7-2",
@@ -235,13 +229,7 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-  if (typeof cloud !== "undefined" && cloud && !cloud.applyingRemote) {
-    cloud.pendingLocalChanges = true;
-  }
-
   if (typeof scheduleCloudSave === "function") scheduleCloudSave();
-  if (typeof renderSyncHealth === "function") renderSyncHealth();
 }
 
 
@@ -324,16 +312,6 @@ let cloud = {
   members: [],
   heartbeatTimer: null,
   saveTimer: null,
-  syncWatchdogTimer: null,
-  connectionAttempting: false,
-  pendingLocalChanges: false,
-  syncInProgress: false,
-  saveInProgress: false,
-  lastSyncStartedAt: "",
-  lastSyncDurationMs: 0,
-  hasLoadedRemote: false,
-  lastRemoteAt: "",
-  lastCloudSaveAt: "",
   applyingRemote: false,
   lastError: "",
   fb: null
@@ -510,7 +488,6 @@ function getFamilyCalendarConfig() {
 // These prevent calendar/admin code from failing if a role helper was missing after an update.
 function getCurrentRole() {
   if (!cloud || !cloud.user) return "guest";
-  if (isCurrentFixedFamilyOwner()) return "owner";
 
   const member = typeof getCurrentMemberRecord === "function" ? getCurrentMemberRecord() : null;
   const memberRole = String(member?.role || "").toLowerCase();
@@ -1877,16 +1854,6 @@ function setCloudStatus(message, level = "warn") {
 
 
 
-
-function isFixedFamilyOwnerEmail(email) {
-  return FIXED_FAMILY_OWNER_EMAILS.includes(String(email || "").trim().toLowerCase());
-}
-
-function isCurrentFixedFamilyOwner() {
-  return Boolean(cloud?.user?.email && isFixedFamilyOwnerEmail(cloud.user.email));
-}
-
-
 function normalizeEmailList(input) {
   if (Array.isArray(input)) {
     return input.map(email => String(email || "").trim().toLowerCase()).filter(Boolean);
@@ -1919,7 +1886,7 @@ function getRoleConfig() {
   const cfg = cloud.familyDoc?.roleConfig || {};
   const adminEmails = getConfiguredAdminEmails ? getConfiguredAdminEmails() : [];
   return {
-    parentEmails: [...new Set([...normalizeEmailList(cfg.parentEmails || adminEmails), ...FIXED_FAMILY_OWNER_EMAILS])],
+    parentEmails: normalizeEmailList(cfg.parentEmails || adminEmails),
     kidMappings: Array.isArray(cfg.kidMappings) ? cfg.kidMappings : [],
     defaultRole: cfg.defaultRole || "viewer"
   };
@@ -1928,10 +1895,6 @@ function getRoleConfig() {
 function roleForEmail(email, uid = "") {
   email = String(email || "").trim().toLowerCase();
   const cfg = getRoleConfig();
-
-  if (isFixedFamilyOwnerEmail(email)) {
-    return { role: "owner", childName: "" };
-  }
 
   if (cloud.familyDoc?.createdBy && uid && cloud.familyDoc.createdBy === uid) {
     return { role: "owner", childName: "" };
@@ -2002,7 +1965,6 @@ async function applyRoleRulesToAllMembers() {
 
 function isRoleSetupManager() {
   if (!cloud || !cloud.user) return false;
-  if (isCurrentFixedFamilyOwner()) return true;
 
   const email = String(cloud.user.email || "").toLowerCase();
   const adminEmails = typeof getConfiguredAdminEmails === "function" ? getConfiguredAdminEmails() : [];
@@ -2146,7 +2108,6 @@ function getCurrentMemberRecord() {
 
 function isFamilyAdminUser() {
   if (!cloud.user) return false;
-  if (isCurrentFixedFamilyOwner()) return true;
 
   const userEmail = String(cloud.user.email || "").toLowerCase();
   const configuredAdmins = getConfiguredAdminEmails();
@@ -2443,7 +2404,6 @@ async function ensureFirebase() {
     cloud.ready = false;
     if (!user) {
       stopPresenceHeartbeat();
-      if (typeof stopSyncWatchdog === "function") stopSyncWatchdog();
       if (cloud.unsubscribeState) cloud.unsubscribeState();
       if (cloud.unsubscribeMembers) cloud.unsubscribeMembers();
       if (cloud.unsubscribeFamily) cloud.unsubscribeFamily();
@@ -2459,7 +2419,6 @@ async function ensureFirebase() {
     }
 
     renderCloudPanel();
-    if (typeof startSyncWatchdog === "function") startSyncWatchdog();
     scheduleFamilySpaceStatusCheck();
 
     try {
@@ -2520,23 +2479,6 @@ async function saveUserCurrentFamily(familyId, role = "member") {
   }, { merge: true });
 }
 
-
-
-
-async function ensureFixedOwnerMemberRole() {
-  if (!cloud.user || !cloud.familyId || !isCurrentFixedFamilyOwner() || !cloud.fb || !cloud.db) return;
-
-  const memberRef = cloud.fb.doc(cloud.db, "families", cloud.familyId, "members", cloud.user.uid);
-  await cloud.fb.setDoc(memberRef, {
-    email: cloud.user.email || "",
-    displayName: cloud.user.displayName || "",
-    photoURL: cloud.user.photoURL || "",
-    role: "owner",
-    childName: "",
-    fixedOwnerEmail: true,
-    fixedOwnerUpdatedAt: cloud.fb.serverTimestamp()
-  }, { merge: true });
-}
 
 
 async function ensureOwnerMemberRecord(familyId, familyData) {
@@ -2765,7 +2707,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.18";
+const APP_VERSION = "4.8.20";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -2976,9 +2918,6 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
 
   cloud.ready = true;
   cloud.lastError = "";
-  ensureFixedOwnerMemberRole().catch(error => {
-    addDiagnostic("Fixed owner role write", error, "warn");
-  });
   setCloudStatus(`Cloud sync active for ${cloud.user.email || "signed-in user"}. Family ID: ${familyId}`, "good");
 
   // Start live listeners, but do not make the UI inactive if a listener has a delayed response.
@@ -3011,32 +2950,12 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
 
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
-    const incomingData = normalizeState(snap.data().data);
-
-    if (isRemoteStateSame(incomingData)) {
-      cloud.ready = true;
-      cloud.hasLoadedRemote = true;
-      cloud.lastRemoteAt = new Date().toISOString();
-      renderSyncHealth();
-      return;
-    }
-
-    if (cloud.pendingLocalChanges && !cloud.applyingRemote) {
-      cloud.lastRemoteAt = new Date().toISOString();
-      renderSyncHealth();
-      return;
-    }
-
     cloud.applyingRemote = true;
-    state = incomingData;
+    state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.applyingRemote = false;
     cloud.ready = true;
-    cloud.hasLoadedRemote = true;
-    cloud.lastRemoteAt = new Date().toISOString();
-    cloud.pendingLocalChanges = false;
     render();
-    renderSyncHealth();
   }, error => {
     cloud.lastError = error.message;
     addDiagnostic("Shared state listener", error, "warn");
@@ -3202,580 +3121,6 @@ async function timedStep(label, promise, ms = 9000) {
 }
 
 
-
-
-
-
-function getFirestoreProjectId() {
-  return window.FAMILY_FIREBASE_CONFIG?.projectId
-    || window.firebaseConfig?.projectId
-    || window.FIREBASE_CONFIG?.projectId
-    || "";
-}
-
-function firestoreRestValue(value) {
-  if (value === null || value === undefined) return { nullValue: null };
-
-  if (typeof value === "string") return { stringValue: value };
-  if (typeof value === "boolean") return { booleanValue: value };
-
-  if (typeof value === "number") {
-    if (Number.isInteger(value)) return { integerValue: String(value) };
-    return { doubleValue: value };
-  }
-
-  if (value instanceof Date) return { timestampValue: value.toISOString() };
-
-  if (Array.isArray(value)) {
-    return {
-      arrayValue: {
-        values: value.map(item => firestoreRestValue(item))
-      }
-    };
-  }
-
-  if (typeof value === "object") {
-    const fields = {};
-    Object.entries(value).forEach(([key, val]) => {
-      if (typeof val !== "undefined") fields[key] = firestoreRestValue(val);
-    });
-    return { mapValue: { fields } };
-  }
-
-  return { stringValue: String(value) };
-}
-
-function firestoreRestFields(object) {
-  const fields = {};
-  Object.entries(object || {}).forEach(([key, value]) => {
-    if (typeof value !== "undefined") fields[key] = firestoreRestValue(value);
-  });
-  return fields;
-}
-
-function encodeDocPath(path) {
-  return String(path || "")
-    .split("/")
-    .filter(Boolean)
-    .map(part => encodeURIComponent(part))
-    .join("/");
-}
-
-async function firestoreRestPatch(docPath, fieldsObject, timeoutMs = 20000) {
-  if (!cloud.user) throw new Error("Not signed in.");
-
-  const projectId = getFirestoreProjectId();
-  if (!projectId) throw new Error("Missing Firebase projectId for REST write.");
-
-  const token = await cloud.user.getIdToken(true);
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${encodeDocPath(docPath)}`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ fields: firestoreRestFields(fieldsObject) }),
-      signal: controller.signal
-    });
-
-    const text = await response.text();
-    let payload = null;
-    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-
-    if (!response.ok) {
-      const message = payload?.error?.message || response.statusText || text || "Unknown REST write error";
-      throw new Error(`REST write failed ${response.status}: ${message}`);
-    }
-
-    return payload;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function testRestCloudWrite() {
-  setButtonBusy("testRestCloudWriteBtn", true, "Testing REST...");
-  try {
-    await ensureFirebase();
-
-    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-    if (!cloud.user || !familyId) throw new Error("Sign in and connect to a family space first.");
-
-    const started = performance.now();
-    await firestoreRestPatch(
-      `families/${familyId}/state/restWriteTest_${cloud.user.uid}`,
-      {
-        ok: true,
-        method: "REST",
-        email: cloud.user.email || "",
-        uid: cloud.user.uid,
-        clientTestedAt: new Date().toISOString(),
-        appVersion: APP_VERSION
-      },
-      20000
-    );
-
-    const duration = Math.round(performance.now() - started);
-    setCloudStep(`REST cloud write test succeeded in ${duration} ms.`, "good");
-    addDiagnosticInfo(
-      "REST cloud write",
-      "REST write succeeded",
-      "The browser can write to Firestore using the REST fallback.",
-      "Use Retry full save. V4.8.18 will use REST fallback if the normal SDK write times out.",
-      "good",
-      `duration=${duration}ms`
-    );
-    return true;
-  } catch (error) {
-    addDiagnostic("REST cloud write", error, "bad", {
-      title: "REST write failed",
-      cause: "The browser could not write to Firestore even using the REST fallback.",
-      action: "This points to Firestore rules/auth/network restrictions. Confirm V4.8.15+ rules are published and test from another network/browser."
-    });
-    setCloudStep(`REST cloud write test failed: ${error.message}`, "bad");
-    return false;
-  } finally {
-    setButtonBusy("testRestCloudWriteBtn", false);
-  }
-}
-
-
-function formatBytes(bytes) {
-  const value = Number(bytes || 0);
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${Math.round(value / 102.4) / 10} KB`;
-  return `${Math.round(value / 1024 / 102.4) / 10} MB`;
-}
-
-async function testCloudWrite() {
-  setButtonBusy("testCloudWriteBtn", true, "Testing...");
-  try {
-    await ensureFirebase();
-
-    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-    if (!cloud.user || !familyId) throw new Error("Sign in and connect to a family space first.");
-
-    const testRef = cloud.fb.doc(cloud.db, "families", familyId, "state", `writeTest_${cloud.user.uid}`);
-    const started = performance.now();
-
-    await withTimeout(
-      cloud.fb.setDoc(testRef, {
-        ok: true,
-        email: cloud.user.email || "",
-        uid: cloud.user.uid,
-        testedAt: cloud.fb.serverTimestamp(),
-        clientTestedAt: new Date().toISOString(),
-        appVersion: APP_VERSION
-      }, { merge: true }),
-      12000,
-      "Small cloud write test timed out."
-    );
-
-    const duration = Math.round(performance.now() - started);
-    setCloudStep(`Small cloud write test succeeded in ${duration} ms. Firestore write permission is OK.`, "good");
-    addDiagnosticInfo(
-      "Cloud write test",
-      "Small cloud write succeeded",
-      "This device can write to Firestore. If full save still fails, the issue is likely the size/complexity of the shared state document or network speed.",
-      "Use Retry full save. If it still times out, we should move payments/tasks to separate Firestore documents in the next architecture update.",
-      "good",
-      `duration=${duration}ms`
-    );
-    return true;
-  } catch (error) {
-    addDiagnostic("Cloud write test", error, "bad", {
-      title: "Small cloud write failed",
-      cause: "This device could not write even a small test document to Firestore.",
-      action: "Check Firestore rules, internet connection, and whether V4.8.15 rules are published."
-    });
-    setCloudStep(`Small SDK write failed: ${error.message}. Trying REST fallback...`, "warn");
-    const restOk = await testRestCloudWrite();
-    return restOk;
-  } finally {
-    setButtonBusy("testCloudWriteBtn", false);
-  }
-}
-
-async function retryFullSaveLonger() {
-  if (cloud.syncInProgress || cloud.saveInProgress) {
-    setCloudStep("Another save/sync is already running. Please wait.", "warn");
-    return false;
-  }
-
-  setButtonBusy("retryFullSaveBtn", true, "Saving...");
-  cloud.syncInProgress = true;
-  const started = performance.now();
-
-  try {
-    await ensureFirebase();
-
-    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-    if (!cloud.user || !familyId) throw new Error("Sign in and connect to a family space first.");
-
-    if (!cloud.ready || !cloud.stateRef) {
-      await activateCloudFromReadableData(familyId);
-    }
-
-    const summary = stateSummaryForDiagnostics();
-    setCloudStep(`Retrying full save. Local state size: ${formatBytes(summary.bytes)}. Waiting up to 30 seconds...`, "warn");
-
-    cloud.saveInProgress = true;
-
-    try {
-      await withTimeout(
-        cloud.fb.setDoc(cloud.stateRef, {
-          data: state,
-          updatedAt: cloud.fb.serverTimestamp(),
-          updatedBy: cloud.user.uid,
-          updatedByEmail: cloud.user.email || "",
-          clientUpdatedAt: new Date().toISOString(),
-          clientSummary: summary,
-          appVersion: APP_VERSION,
-          writeMethod: "SDK"
-        }, { merge: true }),
-        30000,
-        "Full shared family save timed out after 30 seconds."
-      );
-    } catch (sdkError) {
-      addDiagnostic("Retry full save", sdkError, "warn", {
-        title: "SDK full save timed out",
-        cause: "Normal Firestore SDK save did not complete.",
-        action: "Retry full save using REST fallback now."
-      });
-
-      setCloudStep("SDK full save timed out. Trying REST fallback save...", "warn");
-      await firestoreRestPatch(
-        `families/${familyId}/state/main`,
-        {
-          data: state,
-          updatedBy: cloud.user.uid,
-          updatedByEmail: cloud.user.email || "",
-          clientUpdatedAt: new Date().toISOString(),
-          clientSummary: summary,
-          appVersion: APP_VERSION,
-          writeMethod: "REST fallback"
-        },
-        30000
-      );
-    }
-
-    cloud.pendingLocalChanges = false;
-    cloud.lastCloudSaveAt = new Date().toISOString();
-    cloud.lastSyncDurationMs = performance.now() - started;
-
-    setCloudStep(`Full save succeeded in ${Math.round(cloud.lastSyncDurationMs)} ms.`, "good");
-    addDiagnosticInfo(
-      "Full cloud save",
-      "Full shared state saved",
-      `Saved local state to Firestore. Local state size: ${formatBytes(summary.bytes)}.`,
-      "Ask Maayan to click Pull latest from cloud.",
-      "good",
-      `duration=${Math.round(cloud.lastSyncDurationMs)}ms bytes=${summary.bytes}`
-    );
-
-    renderSyncHealth();
-    return true;
-  } catch (error) {
-    cloud.lastError = error.message;
-    addDiagnostic("Full cloud save", error, "bad", {
-      title: "Full shared state save failed",
-      cause: "The app could not save the full shared family state document.",
-      action: "Run Test cloud write. If the small write works but full save fails, the next fix should move Payments/Tasks/etc. into separate Firestore documents instead of one large shared state document."
-    });
-    setCloudStep(`Full save failed: ${error.message}`, "bad");
-    renderSyncHealth();
-    return false;
-  } finally {
-    cloud.saveInProgress = false;
-    cloud.syncInProgress = false;
-    setButtonBusy("retryFullSaveBtn", false);
-    renderSyncHealth();
-  }
-}
-
-
-function setButtonBusy(id, busy, busyText = "Working...") {
-  const btn = document.getElementById(id);
-  if (!btn) return;
-
-  if (busy) {
-    if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
-    btn.textContent = busyText;
-    btn.disabled = true;
-  } else {
-    btn.textContent = btn.dataset.originalText || btn.textContent;
-    btn.disabled = false;
-    delete btn.dataset.originalText;
-  }
-}
-
-function stateSummaryForDiagnostics() {
-  try {
-    return {
-      tasks: state.tasks?.length || 0,
-      events: state.events?.length || 0,
-      payments: state.payments?.length || 0,
-      shopping: state.shopping?.length || 0,
-      schoolItems: state.schoolItems?.length || 0,
-      chores: state.chores?.length || 0,
-      equipmentChecklists: state.equipmentChecklists?.length || 0,
-      bytes: new Blob([JSON.stringify(state)]).size
-    };
-  } catch {
-    return { bytes: 0 };
-  }
-}
-
-function isRemoteStateSame(incomingData) {
-  try {
-    return JSON.stringify(incomingData) === JSON.stringify(state);
-  } catch {
-    return false;
-  }
-}
-
-
-function renderSyncHealth() {
-  const el = document.getElementById("syncHealthSummary");
-  if (!el) return;
-
-  el.className = "sync-health-summary";
-
-  if (!cloud.user) {
-    el.textContent = "Not signed in. Sign in with Google to enable cloud sync.";
-    el.classList.add("warn");
-    return;
-  }
-
-  if (!cloud.familyId && !getStoredFamilyId()) {
-    el.textContent = "Signed in, but no Family ID is connected yet.";
-    el.classList.add("warn");
-    return;
-  }
-
-  if (!cloud.ready) {
-    el.textContent = `Not actively synced yet. Family ID: ${cloud.familyId || getStoredFamilyId() || "unknown"}. The app will keep trying to reconnect automatically.`;
-    el.classList.add("bad");
-    return;
-  }
-
-  const parts = [
-    `Connected to ${cloud.familyId}`,
-    cloud.syncInProgress ? "sync in progress..." : "sync idle",
-    cloud.lastRemoteAt ? `last cloud update received: ${new Date(cloud.lastRemoteAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "waiting for cloud updates",
-    cloud.lastCloudSaveAt ? `last save from this device: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}` : "no save from this device yet",
-    cloud.lastSyncDurationMs ? `last sync took ${Math.round(cloud.lastSyncDurationMs)} ms` : ""
-  ].filter(Boolean);
-
-  const localSummary = stateSummaryForDiagnostics();
-  parts.push(`local state size: ${formatBytes(localSummary.bytes)}`);
-
-  if (cloud.pendingLocalChanges) parts.push("local changes waiting to save");
-
-  el.textContent = parts.join(" · ");
-}
-
-async function pullLatestFromCloud() {
-  setButtonBusy("pullLatestBtn", true, "Pulling...");
-  try {
-    await ensureFirebase();
-
-    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-    if (!cloud.user || !familyId) {
-      setCloudStep("Cannot pull latest: sign in and connect to a family space first.", "warn");
-      renderSyncHealth();
-      return false;
-    }
-
-    const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
-    const snap = await withTimeout(cloud.fb.getDoc(stateRef), 10000, "Pull latest from cloud timed out.");
-
-    if (!snap.exists() || !snap.data()?.data) {
-      setCloudStep("Could not pull latest: shared family data document is missing.", "bad");
-      renderSyncHealth();
-      return false;
-    }
-
-    cloud.applyingRemote = true;
-    state = normalizeState(snap.data().data);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    cloud.applyingRemote = false;
-
-    cloud.familyId = familyId;
-    cloud.stateRef = stateRef;
-    cloud.ready = true;
-    cloud.hasLoadedRemote = true;
-    cloud.lastRemoteAt = new Date().toISOString();
-    cloud.pendingLocalChanges = false;
-
-    setCloudStep(`Pulled latest cloud data for ${familyId}.`, "good");
-    render();
-    renderSyncHealth();
-    return true;
-  } finally {
-    setButtonBusy("pullLatestBtn", false);
-  }
-}
-
-async function forceSyncNow() {
-  if (cloud.syncInProgress) {
-    setCloudStep("Sync is already running. Please wait a moment.", "warn");
-    return;
-  }
-
-  setButtonBusy("forceSyncNowBtn", true, "Syncing...");
-  cloud.syncInProgress = true;
-  cloud.lastSyncStartedAt = new Date().toISOString();
-  const started = performance.now();
-  renderSyncHealth();
-
-  try {
-    await ensureFirebase();
-
-    if (!cloud.user) {
-      throw new Error("Cannot sync because you are not signed in.");
-    }
-
-    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-    if (!familyId) {
-      throw new Error("Cannot sync because no Family ID is connected.");
-    }
-
-    if (!cloud.ready || !cloud.stateRef) {
-      await activateCloudFromReadableData(familyId);
-    }
-
-    await saveCloudNow(true);
-    setCloudStep(`Sync completed successfully.`, "good");
-  } catch (error) {
-    addDiagnostic("Manual sync", error, "bad");
-    setCloudStep(`Sync failed: ${error.message || error}`, "bad");
-  } finally {
-    cloud.syncInProgress = false;
-    cloud.lastSyncDurationMs = performance.now() - started;
-    setButtonBusy("forceSyncNowBtn", false);
-    renderSyncHealth();
-  }
-}
-
-
-async function ensureCloudConnection(reason = "auto") {
-  if (cloud.connectionAttempting || cloud.syncInProgress || cloud.saveInProgress) return false;
-  if (!cloud.user) return false;
-
-  const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-  if (!familyId) {
-    renderSyncHealth();
-    return false;
-  }
-
-  if (cloud.ready && cloud.stateRef && cloud.unsubscribeState) {
-    renderSyncHealth();
-    return true;
-  }
-
-  cloud.connectionAttempting = true;
-  try {
-    setCloudStep(`Auto reconnect (${reason}): connecting to family space ${familyId}...`, "warn");
-
-    // Prefer the direct activation path because diagnostics proved it is more reliable.
-    if (typeof activateCloudFromReadableData === "function") {
-      await activateCloudFromReadableData(familyId);
-    } else {
-      await connectFamily(familyId);
-    }
-
-    if (cloud.pendingLocalChanges && !cloud.syncInProgress && !cloud.saveInProgress) {
-      await saveCloudNow(false);
-    }
-
-    renderSyncHealth();
-    return true;
-  } catch (error) {
-    cloud.lastError = error.message;
-    addDiagnostic("Auto reconnect", error, "warn", {
-      title: "Auto reconnect did not complete",
-      cause: "The app tried to reconnect automatically but could not complete the cloud sync.",
-      action: "Run connection check and copy the diagnostic report if this repeats."
-    });
-    setCloudStep(`Auto reconnect failed: ${error.message}`, "bad");
-    renderSyncHealth();
-    return false;
-  } finally {
-    cloud.connectionAttempting = false;
-  }
-}
-
-function startSyncWatchdog() {
-  stopSyncWatchdog();
-  cloud.syncWatchdogTimer = setInterval(async () => {
-    if (!cloud.user) return;
-
-    if (!cloud.ready || !cloud.stateRef || !cloud.unsubscribeState) {
-      await ensureCloudConnection("watchdog");
-      return;
-    }
-
-    if (cloud.pendingLocalChanges) {
-      await saveCloudNow(true);
-    }
-
-    renderSyncHealth();
-  }, 60000);
-}
-
-function stopSyncWatchdog() {
-  if (cloud.syncWatchdogTimer) clearInterval(cloud.syncWatchdogTimer);
-  cloud.syncWatchdogTimer = null;
-}
-
-
-async function repairFixedOwnerRoleNow() {
-  try {
-    if (!isCurrentFixedFamilyOwner()) {
-      alert("This button is only for the fixed owner emails.");
-      return;
-    }
-
-    await ensureCloudConnection("repair fixed owner role");
-    await ensureFixedOwnerMemberRole();
-    await pullLatestFromCloud().catch(() => {});
-    setCloudStep(`Owner role repaired for ${cloud.user.email}.`, "good");
-    alert(`Owner role repaired for ${cloud.user.email}. Please refresh once if the role display does not update immediately.`);
-  } catch (error) {
-    addDiagnostic("Repair fixed owner role", error, "bad");
-    alert(`Could not repair owner role: ${error.message}`);
-  }
-}
-
-
-function wireSyncHealthControls() {
-  document.getElementById("testCloudWriteBtn")?.addEventListener("click", testCloudWrite);
-  document.getElementById("retryFullSaveBtn")?.addEventListener("click", retryFullSaveLonger);
-  document.getElementById("forceSyncNowBtn")?.addEventListener("click", forceSyncNow);
-  document.getElementById("repairFixedOwnerBtn")?.addEventListener("click", repairFixedOwnerRoleNow);
-  document.getElementById("pullLatestBtn")?.addEventListener("click", async () => {
-    try {
-      await pullLatestFromCloud();
-    } catch (error) {
-      addDiagnostic("Pull latest", error, "bad");
-      setCloudStep(`Pull latest failed: ${error.message}`, "bad");
-    }
-  });
-}
-
-window.addEventListener("online", () => ensureCloudConnection("browser online"));
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") ensureCloudConnection("app visible");
-});
-
-
 async function connectFamily(familyId) {
   await ensureFirebase();
   if (!cloud.user) throw new Error("Sign in first.");
@@ -3845,12 +3190,6 @@ async function connectFamily(familyId) {
     4000
   );
 
-  await tryTimedOptionalStep(
-    "Fixed owner role write",
-    ensureFixedOwnerMemberRole(),
-    4000
-  );
-
   try {
     const memberSnap = await timedStep(
       `Step 4/5: Loading family members...`,
@@ -3875,13 +3214,8 @@ async function connectFamily(familyId) {
     );
 
     if (stateSnap.exists() && stateSnap.data()?.data) {
-      cloud.applyingRemote = true;
       state = normalizeState(stateSnap.data().data);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      cloud.applyingRemote = false;
-      cloud.hasLoadedRemote = true;
-      cloud.lastRemoteAt = new Date().toISOString();
-      cloud.pendingLocalChanges = false;
     } else {
       await timedStep(
         `Creating missing shared family data document...`,
@@ -3935,32 +3269,12 @@ async function connectFamily(familyId) {
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
 
-    const incomingData = normalizeState(snap.data().data);
-
-    if (isRemoteStateSame(incomingData)) {
-      cloud.ready = true;
-      cloud.hasLoadedRemote = true;
-      cloud.lastRemoteAt = new Date().toISOString();
-      renderSyncHealth();
-      return;
-    }
-
-    if (cloud.pendingLocalChanges && !cloud.applyingRemote) {
-      cloud.lastRemoteAt = new Date().toISOString();
-      renderSyncHealth();
-      return;
-    }
-
     cloud.applyingRemote = true;
-    state = incomingData;
+    state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.applyingRemote = false;
     cloud.ready = true;
-    cloud.hasLoadedRemote = true;
-    cloud.lastRemoteAt = new Date().toISOString();
-    cloud.pendingLocalChanges = false;
     render();
-    renderSyncHealth();
   }, error => {
     cloud.ready = false;
     cloud.lastError = error.message;
@@ -3971,109 +3285,26 @@ async function connectFamily(familyId) {
 }
 
 function scheduleCloudSave() {
-  if (!cloud || !cloud.user || cloud.applyingRemote) return;
-
-  if (!cloud.ready || !cloud.stateRef) {
-    clearTimeout(cloud.saveTimer);
-    cloud.saveTimer = setTimeout(() => ensureCloudConnection("pending local save"), 1200);
-    return;
-  }
-
+  if (!cloud || !cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
   clearTimeout(cloud.saveTimer);
-  cloud.saveTimer = setTimeout(() => saveCloudNow(false), 2500);
+  cloud.saveTimer = setTimeout(saveCloudNow, 700);
 }
 
-async function saveCloudNow(force = false) {
-  if (!cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return false;
-  if (!force && !cloud.pendingLocalChanges) return true;
-
-  if (cloud.saveInProgress) {
-    setCloudStatus("A save is already in progress. Waiting for it to finish...", "warn");
-    return false;
-  }
-
-  cloud.saveInProgress = true;
-  const started = performance.now();
+async function saveCloudNow() {
+  if (!cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
 
   try {
-    const summary = stateSummaryForDiagnostics();
-
-    await withTimeout(
-      cloud.fb.setDoc(cloud.stateRef, {
-        data: state,
-        updatedAt: cloud.fb.serverTimestamp(),
-        updatedBy: cloud.user.uid,
-        updatedByEmail: cloud.user.email || "",
-        clientUpdatedAt: new Date().toISOString(),
-        clientSummary: summary
-      }, { merge: true }),
-      15000,
-      "Saving shared family data to Firestore timed out after 15 seconds. Use Test cloud write, then Retry full save."
-    );
-
-    cloud.pendingLocalChanges = false;
-    cloud.lastCloudSaveAt = new Date().toISOString();
-    cloud.lastSyncDurationMs = performance.now() - started;
-    setCloudStatus(`Cloud sync active. Last save: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`, "good");
-    renderSyncHealth();
-    return true;
+    await cloud.fb.setDoc(cloud.stateRef, {
+      data: state,
+      updatedAt: cloud.fb.serverTimestamp(),
+      updatedBy: cloud.user.uid
+    }, { merge: true });
   } catch (error) {
     cloud.lastError = error.message;
-
-    try {
-      setCloudStatus("SDK save failed, trying REST fallback...", "warn");
-      const summary = stateSummaryForDiagnostics();
-      const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-
-      await firestoreRestPatch(
-        `families/${familyId}/state/main`,
-        {
-          data: state,
-          updatedBy: cloud.user.uid,
-          updatedByEmail: cloud.user.email || "",
-          clientUpdatedAt: new Date().toISOString(),
-          clientSummary: summary,
-          appVersion: APP_VERSION,
-          writeMethod: "REST fallback"
-        },
-        30000
-      );
-
-      cloud.pendingLocalChanges = false;
-      cloud.lastCloudSaveAt = new Date().toISOString();
-      cloud.lastSyncDurationMs = performance.now() - started;
-      setCloudStatus(`Cloud sync active. REST fallback save completed: ${new Date(cloud.lastCloudSaveAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`, "good");
-      addDiagnosticInfo(
-        "Cloud save",
-        "REST fallback save succeeded",
-        "The normal Firestore SDK write timed out, but the REST fallback saved the shared family data.",
-        "Ask Maayan to click Pull latest from cloud.",
-        "good",
-        `duration=${Math.round(cloud.lastSyncDurationMs)}ms`
-      );
-      renderSyncHealth();
-      return true;
-    } catch (restError) {
-      cloud.lastError = restError.message;
-      addDiagnostic("Cloud save", restError, "bad", {
-        title: "SDK and REST cloud save both failed",
-        cause: "The app could not save with the normal Firestore SDK or the REST fallback.",
-        action: "Check Firestore rules, auth, network restrictions, VPN/proxy, or test from another browser/network."
-      });
-    }
-
-    addDiagnostic("Cloud save", error, "bad", {
-      title: "Cloud save failed or timed out",
-      cause: "The app tried to save your changes to Firestore but the save did not complete quickly.",
-      action: "Wait a few seconds and click Sync now again. If it repeats, run connection check and check your internet/Firebase rules."
-    });
     setCloudStatus(`Could not save to cloud: ${error.message}`, "bad");
-    renderSyncHealth();
-    return false;
-  } finally {
-    cloud.saveInProgress = false;
   }
 }
+
 
 
 function calendarButtonDebug(message, level = "warn") {
@@ -4352,7 +3583,6 @@ window.addEventListener("load", async () => {
   wireCloudControls();
   wireCloudRecoveryControls();
   wireDiagnosticsControls();
-  wireSyncHealthControls();
   wireGoogleCalendarControls();
   wireRoleSetupControls();
   renderCloudPanel();
@@ -4404,7 +3634,6 @@ function wireCloudRecoveryControls() {
 
 wireCloudRecoveryControls();
 wireDiagnosticsControls();
-wireSyncHealthControls();
 render();
 
 

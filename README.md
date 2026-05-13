@@ -1,47 +1,44 @@
-# Family Command Center PWA V4.8.18 — REST Write Fallback
+# Family Command Center PWA V4.8.20 — Stable Rollback Baseline
 
-This version targets the issue:
+This package rolls the app code back to the last stable troubleshooting baseline.
+
+## Why this rollback point
+
+This app code is based on **V4.8.12**:
+
+- V4.8.11 proved that cloud data was readable and `cloud.ready = true`.
+- V4.8.12 fixed the Step 3 owner/member repair hang.
+- V4.8.13–V4.8.19 added several sync experiments that made the app slower and harder to troubleshoot.
+
+## What is kept from later versions
+
+The included `firestore.rules` keeps the safer V4.8.15 owner-aware rules for:
+
+- `fadlon1980@gmail.com`
+- `fadlonmay@gmail.com`
+
+## What is intentionally removed
+
+This rollback avoids the later experimental sync tools:
+
+- aggressive auto reconnect watchdog
+- REST-first save path
+- SDK/REST write test buttons
+- reset sync/testing state
+- later sync health changes
+
+## Open after upload
 
 ```text
-Small cloud write test failed: Small cloud write test timed out.
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-20
 ```
 
-## What this means
+## Troubleshooting plan
 
-The app can read Firestore, but the normal Firestore SDK write channel is hanging or blocked.
-
-Common causes:
-
-- Browser/network/VPN/proxy blocks Firestore WebChannel writes
-- Firewall/security software interferes with Firestore SDK write connection
-- Firestore SDK write hangs even though REST/fetch may work
-
-## New in V4.8.18
-
-Settings → Cloud sync health includes:
-
-- **Test SDK write**
-- **Test REST write**
-- **Retry full save**
-
-If the SDK write times out, the app tries Firestore REST fallback.
-
-## How to test
-
-1. Open:
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-18
-```
-
-2. Go to Settings → Cloud sync health.
-3. Click **Test SDK write**.
-4. If it fails, click **Test REST write**.
-5. If REST write succeeds, click **Retry full save**.
-6. Check Firestore:
-   `families → FAM-59ATQF5R → state → main`
-7. Ask Maayan to click **Pull latest from cloud**.
-
-## If REST write also fails
-
-This points to Firestore rules/auth/network restrictions. Confirm V4.8.15+ rules are published and test from a different browser or network.
+1. Confirm login works.
+2. Confirm family space loads.
+3. Run diagnostics.
+4. Confirm family document, member record, and shared state are readable.
+5. Add one Shopping item.
+6. Check if it appears in Firestore `state/main`.
+7. Only then test Maayan/device-to-device sync.
