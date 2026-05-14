@@ -1,20 +1,97 @@
-// Family Command Center V4.4 - Firebase config
-// Keep the variable name exactly as FAMILY_FIREBASE_CONFIG.
+rules_version = '2';
 
-window.FAMILY_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyC8Gxj34tTrZcky0C2SJ_rkbEEAeGJ7mkg",
-  authDomain: "fadlon-family-hub.firebaseapp.com",
-  projectId: "fadlon-family-hub",
-  storageBucket: "fadlon-family-hub.firebasestorage.app",
-  messagingSenderId: "633497042128",
-  appId: "1:633497042128:web:89320ba23532f2eb71f2d5"
-};
+// V4.8.20 rollback package keeps V4.8.15 owner-aware Firestore rules.
+// Fixed owner emails:
+// - fadlon1980@gmail.com
+// - fadlonmay@gmail.com
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
 
-// Admin emails that can see the admin reset button.
-// Add your Google email and Maayan's Google email here.
-// Keep all emails lowercase.
-window.FAMILY_ADMIN_EMAILS = [
-  // "your-email@gmail.com",
-  // "maayan-email@gmail.com"
-];
+    function isFixedOwnerEmail() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && (
+          request.auth.token.email == "fadlon1980@gmail.com"
+          || request.auth.token.email == "fadlonmay@gmail.com"
+        );
+    }
+
+    function memberDoc(familyId) {
+      return get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
+    function isMember(familyId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
+    function isOriginalCreator(familyId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/families/$(familyId)).data.createdBy == request.auth.uid;
+    }
+
+    function isRoleOwnerOrAdmin(familyId) {
+      return isMember(familyId)
+        && (
+          memberDoc(familyId).data.role == "owner"
+          || memberDoc(familyId).data.role == "admin"
+        );
+    }
+
+    function isFamilyManager(familyId) {
+      return isOriginalCreator(familyId)
+        || isFixedOwnerEmail()
+        || isRoleOwnerOrAdmin(familyId);
+    }
+
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /families/{familyId} {
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow read: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
+      allow update: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if isMember(familyId)
+          || isOriginalCreator(familyId)
+          || isFixedOwnerEmail()
+          || (signedIn() && request.auth.uid == uid);
+
+        allow create: if signedIn()
+          && (
+            isFamilyManager(familyId)
+            || (
+              request.auth.uid == uid
+              && (
+                isOriginalCreator(familyId)
+                || isFixedOwnerEmail()
+                || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
+              )
+            )
+          );
+
+        allow update: if isFamilyManager(familyId)
+          || (
+            signedIn()
+            && request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+          );
+
+        allow delete: if isFamilyManager(familyId);
+      }
+
+      match /state/{docId} {
+        allow read, write: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
+      }
+    }
+  }
+}

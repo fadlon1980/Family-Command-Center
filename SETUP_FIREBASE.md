@@ -1,30 +1,28 @@
-const CACHE_NAME = "family-command-center-v4-8-21";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./firebase-config.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
-];
+# V4.8.21 Setup Notes
 
-self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
-  self.skipWaiting();
-});
+No Firestore rules change is required if V4.8.20 or V4.8.15 rules are already published.
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
-  );
-  self.clients.claim();
-});
+## Upload
 
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).catch(() => caches.match("./index.html")))
-  );
-});
+Upload all files to GitHub Pages.
+
+Open:
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-21
+```
+
+## Test
+
+Use Quick Capture:
+
+```text
+Pay for Hebrew lesson $260 by 15 May for Daniel
+```
+
+Expected:
+
+- Payment created
+- Calendar due-date reminder created
+
+Then check Money and Calendar.
