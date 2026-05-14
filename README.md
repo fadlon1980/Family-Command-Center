@@ -1,39 +1,53 @@
-# Family Command Center PWA V4.8.21 — Smarter Quick Capture Parser
+# Family Command Center PWA V4.8.22 — Edit Items
 
-This version is based on the stable V4.8.20 rollback baseline and changes only the quick-capture logic.
+This version is based on the working V4.8.21 quick-capture baseline and adds lightweight editing.
 
-## Main improvement
+## New
 
-The Quick Capture line now understands requests that should create more than one item.
+Most lists now include an **Edit** button:
 
-Example:
+- Tasks
+- Calendar events
+- Payments
+- Homework / exams
+- Shopping
+- Prep items
+- Decisions
+- Admin / school items
+
+## Why this matters
+
+If Quick Capture creates something like:
 
 ```text
 Pay for Hebrew lesson $260 by 15 May for Daniel
 ```
 
-Creates:
+you can now edit the generated payment fields:
 
-- Payment: Hebrew lesson, $260, due 15 May, Kids category
-- Calendar event: Payment due reminder on 15 May for Daniel
+- payment name
+- amount
+- due date
+- category
+- owner / child
+- frequency
+- method
+- status
+- paid date
+- notes
 
-## Other examples
+When editing a payment, the app will ask whether to update matching linked calendar reminders too.
 
-```text
-Pay soccer fee $120 by Monday for Maya
-Daniel science exam next Friday
-Maya math homework due tomorrow
-Daniel Hebrew lesson Tuesday 5pm
-```
+## How editing works in V4.8.22
 
-## Important
+This is a lightweight first version using browser prompt dialogs. It is intentionally small and stable.
 
-This is a local rule-based parser, not an external AI service. It does not send family data to any AI API.
+Later we can replace it with a nicer full edit form / modal.
 
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-21
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-22
 ```
 
-No Firestore rules change is required if V4.8.20 or V4.8.15 rules are already published.
+No Firestore rules change is required if V4.8.20 rules are already published.

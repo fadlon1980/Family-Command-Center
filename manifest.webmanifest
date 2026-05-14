@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.21",
+  "name": "Family Command Center V4.8.22",
   "short_name": "Family Hub",
-  "description": "Smarter quick capture parser for payments, due dates, schoolwork, events, and reminders.",
+  "description": "Adds lightweight Edit buttons for items created manually or from Quick Capture.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
