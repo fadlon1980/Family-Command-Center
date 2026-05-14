@@ -1,34 +1,30 @@
-# V4.8.20 Rollback Setup Notes
+const CACHE_NAME = "family-command-center-v4-8-21";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./firebase-config.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
+];
 
-## Step 1 — Upload to GitHub
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
+  self.skipWaiting();
+});
 
-Upload all files from this package to your GitHub Pages repository.
+self.addEventListener("activate", event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
+  );
+  self.clients.claim();
+});
 
-## Step 2 — Firestore rules
-
-If V4.8.15 rules are already published, you can skip this.
-
-Otherwise go to:
-
-```text
-Firebase Console → Firestore Database → Rules
-```
-
-Paste the full content of `firestore.rules` from this package and click **Publish**.
-
-## Step 3 — Open rollback version
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-20
-```
-
-## Step 4 — Test only Elad → Firestore first
-
-1. Sign in as Elad.
-2. Run connection diagnostics.
-3. Add Shopping item: `ROLLBACK TEST ELAD 001`
-4. Wait 5 seconds.
-5. Check Firebase:
-   `families → FAM-59ATQF5R → state → main → data → shopping`
-
-Do not test Maayan until Elad → Firestore works.
+self.addEventListener("fetch", event => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then(cached => cached || fetch(event.request).catch(() => caches.match("./index.html")))
+  );
+});

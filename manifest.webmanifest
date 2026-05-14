@@ -1,21 +1,839 @@
-{
-  "name": "Family Command Center V4.8.20",
-  "short_name": "Family Hub",
-  "description": "Stable rollback baseline based on V4.8.12 app behavior, with owner-aware Firestore rules.",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#2563eb",
-  "icons": [
-    {
-      "src": "icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
-}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>Family Command Center V4.8.21</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Family Command Center</p>
+        <h1 id="familyTitle">Family Hub</h1>
+        <p id="todayLabel" class="muted"></p>
+      </div>
+      <button id="installBtn" class="ghost hidden">Install</button>
+    </header>
+
+    <section class="quick-card">
+      <div class="quick-header">
+        <div>
+          <h2>Quick capture</h2>
+          <p class="muted">Capture tasks, payments, prep, school forms, decisions, shopping, and events.</p>
+        </div>
+      </div>
+      <form id="quickForm" class="quick-form">
+        <input id="quickText" type="text" placeholder="Example: Pay soccer fee $120 by Friday, decision choose summer camp, buy milk" autocomplete="off" />
+        <select id="quickType" aria-label="Item type">
+          <option value="auto">Auto</option>
+          <option value="task">Task</option>
+          <option value="event">Event</option>
+          <option value="payment">Payment</option>
+          <option value="prep">Tomorrow prep</option>
+          <option value="decision">Decision</option>
+          <option value="admin">School/Admin</option>
+          <option value="schoolwork">Homework / Exam</option>
+          <option value="shopping">Shopping</option>
+          <option value="chore">Chore</option>
+          <option value="checklist">Equipment checklist</option>
+          <option value="reminder">Reminder</option>
+          <option value="inbox">Inbox</option>
+        </select>
+        <button type="submit">Add</button>
+      </form>
+      <div id="assistantFeedback" class="assistant-feedback hidden"></div>
+    </section>
+
+    <section id="roleBanner" class="role-banner hidden">
+      <div>
+        <strong id="roleBannerTitle">Family view</strong>
+        <span id="roleBannerText">Your visible tabs are based on your family role.</span>
+      </div>
+    </section>
+
+    <nav class="tabs" aria-label="Main navigation">
+      <button class="tab active" data-screen="today" data-roles="all">Today</button>
+      <button class="tab parent-only" data-screen="tasks" data-roles="parent">Tasks</button>
+      <button class="tab" data-screen="calendar" data-roles="all">Calendar</button>
+      <button class="tab" data-screen="learning" data-roles="all">Homework</button>
+      <button class="tab" data-screen="chores" data-roles="all">Chores</button>
+      <button class="tab parent-only" data-screen="money" data-roles="parent">Money</button>
+      <button class="tab parent-only" data-screen="planning" data-roles="parent">Planning</button>
+      <button class="tab" data-screen="shopping" data-roles="all">Shopping</button>
+      <button class="tab" data-screen="kids" data-roles="all">Kids</button>
+      <button class="tab parent-only" data-screen="routines" data-roles="parent">Routines</button>
+      <button class="tab" data-screen="settings" data-roles="all">Settings</button>
+    </nav>
+
+    <main>
+      <section id="today" class="screen active">
+        <div class="summary-strip" id="summaryStrip"></div>
+
+        <div class="grid">
+
+          <article class="card digest-card">
+            <div class="section-title">
+              <div><h2>Daily digest</h2><p class="muted">Smart summary of what needs attention today and tomorrow.</p></div>
+              <button id="notifyBtn" type="button" class="secondary">Enable reminders</button>
+            </div>
+            <div id="dailyDigestList" class="list"></div>
+          </article>
+          <article class="card conflict-card">
+            <div class="section-title"><div><h2>Conflict detection</h2><p class="muted">Potential overlaps between activities and calendar items.</p></div></div>
+            <div id="conflictList" class="list"></div>
+          </article>
+
+          <article id="kidDashboardCard" class="card kid-dashboard-card hidden">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Kid view</p>
+                <h2>My school & activities</h2>
+                <p class="muted">Homework, exams, activities, prep, and things to ask parents.</p>
+              </div>
+            </div>
+            <div id="kidDashboardList" class="list"></div>
+          </article>
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Today</h2>
+                <p class="muted">Events and activities planned for today.</p>
+              </div>
+            </div>
+            <div id="todayEvents" class="list"></div>
+          </article>
+
+
+          <article class="card google-calendar-card">
+            <div class="section-title">
+              <div>
+                <h2>Google Calendar</h2>
+                <p class="muted">Events pulled from your connected Google Calendar.</p>
+              </div>
+            </div>
+            <div id="todayGoogleCalendar" class="list"></div>
+          </article>
+
+          <article class="card attention-card">
+            <div class="section-title">
+              <div>
+                <h2>Payments attention</h2>
+                <p class="muted">Overdue, due today, and due in the next 7 days.</p>
+              </div>
+            </div>
+            <div id="todayPayments" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Tasks needing attention</h2>
+                <p class="muted">Overdue and due today.</p>
+              </div>
+            </div>
+            <div id="todayTasks" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Tomorrow prep</h2>
+                <p class="muted">Items to prepare before tomorrow.</p>
+              </div>
+            </div>
+            <div id="tomorrowPrepDashboard" class="list"></div>
+          </article>
+
+          <article class="card schoolwork-card">
+            <div class="section-title">
+              <div>
+                <h2>Homework & exams</h2>
+                <p class="muted">Upcoming homework, projects, quizzes, tests, and exam dates.</p>
+              </div>
+            </div>
+            <div id="todaySchoolwork" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Needs decision</h2>
+                <p class="muted">Family decisions waiting for alignment.</p>
+              </div>
+            </div>
+            <div id="todayDecisions" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>School & admin</h2>
+                <p class="muted">Forms, payments, documents, and deadlines.</p>
+              </div>
+            </div>
+            <div id="todayAdmin" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Inbox / brain dump</h2>
+                <p class="muted">Unsorted items that still need a home.</p>
+              </div>
+            </div>
+            <div id="todayInbox" class="list"></div>
+          </article>
+
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <h2>Shopping open items</h2>
+                <p class="muted">Top open items from the shared list.</p>
+              </div>
+            </div>
+            <div id="todayShopping" class="list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="tasks" class="screen">
+        <article class="card">
+          <div class="section-title">
+            <div>
+              <h2>Family tasks</h2>
+              <p class="muted">Track ownership, due dates, priority, and status.</p>
+            </div>
+          </div>
+          <form id="taskForm" class="form-grid">
+            <input id="taskTitle" placeholder="Task name" required />
+            <select id="taskOwner"></select>
+            <input id="taskDue" type="date" />
+            <select id="taskCategory">
+              <option>School</option>
+              <option>Home</option>
+              <option>Health</option>
+              <option>Admin</option>
+              <option>Finance</option>
+              <option>Shopping</option>
+              <option>Kids Activity</option>
+              <option>Car</option>
+              <option>Travel</option>
+              <option>Other</option>
+            </select>
+            <select id="taskPriority">
+              <option value="Normal">Normal</option>
+              <option value="High">High</option>
+              <option value="Low">Low</option>
+            </select>
+            <button type="submit">Add task</button>
+          </form>
+          <div class="filters">
+            <button class="pill active" data-task-filter="open">Open</button>
+            <button class="pill" data-task-filter="all">All</button>
+            <button class="pill" data-task-filter="done">Done</button>
+          </div>
+          <div id="taskList" class="list"></div>
+        </article>
+      </section>
+
+      <section id="calendar" class="screen">
+
+        <article class="card wide google-calendar-connect-card">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Google Calendar</p>
+              <h2>Connected calendar</h2>
+              <p class="muted">Connect Google Calendar to show real family calendar events in the dashboard.</p>
+            </div>
+          </div>
+
+          <div id="googleCalendarStatus" class="cloud-status warn">Google Calendar is not connected yet.</div>
+
+          <div class="calendar-connect-grid">
+            <div class="calendar-connect-box">
+              <h3>1. Connect</h3>
+              <p class="muted">This asks Google for read-only Calendar permission.</p>
+              <button id="connectCalendarBtn" type="button" onclick="window.__fccCalendarConnectClick && window.__fccCalendarConnectClick(event)">Connect Google Calendar</button>
+            </div>
+
+            <div class="calendar-connect-box">
+              <h3>2. Select calendar</h3>
+              <p class="muted">Choose the family calendar you want to display.</p>
+              <select id="calendarSelect" aria-label="Google Calendar selection">
+                <option value="">Connect first</option>
+              </select>
+            </div>
+
+            <div class="calendar-connect-box">
+              <h3>3. Refresh</h3>
+              <p class="muted">Pull latest events for the next 7 days.</p>
+              <button id="refreshCalendarBtn" type="button" class="secondary" onclick="window.__fccCalendarRefreshClick && window.__fccCalendarRefreshClick(event)">Refresh calendar events</button>
+            </div>
+          </div>
+
+
+          <div id="familyCalendarPanel" class="family-calendar-panel hidden">
+            <div class="section-title">
+              <div>
+                <h3>Family calendar configuration</h3>
+                <p class="muted">A parent can save the selected Google Calendar as the shared family calendar for everyone.</p>
+              </div>
+            </div>
+            <div id="familyCalendarStatus" class="calendar-tip">No family calendar is configured yet.</div>
+            <div class="button-row">
+              <button id="saveFamilyCalendarBtn" type="button" class="secondary" onclick="window.__fccCalendarSaveClick && window.__fccCalendarSaveClick(event)">Save selected calendar as family calendar</button>
+              <button id="clearFamilyCalendarBtn" type="button" class="ghost">Clear family calendar setting</button>
+            </div>
+            <p class="muted small-note">Each user still needs to connect Google Calendar once, but the app will auto-select this family calendar after connection.</p>
+          </div>
+
+          <div class="calendar-tip">
+            Calendar access is read-only in V4.7. Events are not copied into Firestore yet. The selected family calendar is saved to the family space, but each user still connects Google Calendar once.
+          </div>
+
+          <div id="googleCalendarList" class="list"></div>
+        </article>
+
+
+        <article class="card wide equipment-card">
+          <div class="section-title"><div><p class="eyebrow">Activity preparation</p><h2>Equipment checklists per activity</h2><p class="muted">Create reusable packing lists for sports, school trips, dance, lessons, and other activities.</p></div></div>
+          <form id="equipmentForm" class="equipment-form parent-only">
+            <input id="equipmentActivity" placeholder="Activity name, e.g. Basketball practice" required />
+            <select id="equipmentChild"></select>
+            <input id="equipmentItems" placeholder="Items, comma separated: shoes, water bottle, uniform" required />
+            <button type="submit">Add checklist</button>
+          </form>
+          <div id="equipmentList" class="list"></div>
+        </article>
+        <article class="card wide"><h2>Today equipment prep</h2><p class="muted">Automatically matched from today and tomorrow activities.</p><div id="equipmentTodayList" class="list"></div></article>
+        <article class="card wide"><h2>Calendar conflicts</h2><p class="muted">Potential overlapping items from manual events and Google Calendar.</p><div id="calendarConflictList" class="list"></div></article>
+
+        <article class="card">
+          <div class="section-title">
+            <div>
+              <h2>Family calendar items</h2>
+              <p class="muted">Manual events for now. Google Calendar sync can be added next.</p>
+            </div>
+          </div>
+          <form id="eventForm" class="form-grid">
+            <input id="eventTitle" placeholder="Event / activity" required />
+            <select id="eventPerson"></select>
+            <input id="eventDate" type="date" required />
+            <input id="eventTime" type="time" />
+            <input id="eventLocation" placeholder="Location" />
+            <button type="submit">Add event</button>
+          </form>
+          <div id="eventList" class="list"></div>
+        </article>
+      </section>
+
+
+      <section id="learning" class="screen">
+        <div class="grid">
+          <article class="card wide learning-hero">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">School focus</p>
+                <h2>Homework, exams & due dates</h2>
+                <p class="muted">Track each child’s homework, projects, quizzes, tests, and exams in one clear place.</p>
+              </div>
+            </div>
+
+            <form id="schoolForm" class="school-form">
+              <input id="schoolTitle" placeholder="Example: Math homework, Science exam, History project" required />
+              <select id="schoolChild"></select>
+              <select id="schoolType">
+                <option>Homework</option>
+                <option>Exam</option>
+                <option>Test</option>
+                <option>Quiz</option>
+                <option>Project</option>
+                <option>Reading</option>
+                <option>Other</option>
+              </select>
+              <input id="schoolSubject" placeholder="Subject" />
+              <input id="schoolDue" type="date" />
+              <select id="schoolPriority">
+                <option>Normal</option>
+                <option>High</option>
+                <option>Low</option>
+              </select>
+              <input id="schoolNotes" placeholder="Notes, materials, link, chapter, teacher, etc." />
+              <button type="submit">Add school item</button>
+            </form>
+          </article>
+
+          <article class="card">
+            <h2>Due next 7 days</h2>
+            <p class="muted">Items that need attention soon.</p>
+            <div id="schoolDueWeek" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Due this month</h2>
+            <p class="muted">A wider view of upcoming school load.</p>
+            <div id="schoolDueMonth" class="list"></div>
+          </article>
+
+          
+          <article id="kidRequestCard" class="card kid-request-card hidden">
+            <h2>Ask parents</h2>
+            <p class="muted">Use this for things you need parents to buy, sign, approve, or help with.</p>
+            <form id="kidRequestForm" class="stack-form">
+              <input id="kidRequestText" placeholder="Example: I need a parent to sign my field trip form" />
+              <select id="kidRequestType">
+                <option>Need signature</option>
+                <option>Need to buy</option>
+                <option>Need help</option>
+                <option>School question</option>
+                <option>Other</option>
+              </select>
+              <button type="submit">Send request to parents</button>
+            </form>
+            <div id="kidRequestList" class="list"></div>
+          </article>
+
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>All homework & exams</h2>
+                <p class="muted">Use this as the family schoolwork tracker.</p>
+              </div>
+            </div>
+            <div id="schoolItemList" class="list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="money" class="screen">
+        <div class="grid">
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>Payments & family expenses</h2>
+                <p class="muted">Monitor what is due, what was paid, and spending by week, month, and year.</p>
+              </div>
+            </div>
+            <div id="moneySummary" class="money-summary"></div>
+
+            <form id="paymentForm" class="payment-form">
+              <input id="paymentName" placeholder="Payment / expense name" required />
+              <input id="paymentAmount" type="number" step="0.01" min="0" placeholder="Amount" required />
+              <input id="paymentDue" type="date" />
+              <select id="paymentCategory">
+                <option>Groceries</option>
+                <option>Kids Activities</option>
+                <option>School</option>
+                <option>Health</option>
+                <option>Home</option>
+                <option>Car</option>
+                <option>Subscriptions</option>
+                <option>Utilities</option>
+                <option>Travel</option>
+                <option>Entertainment</option>
+                <option>Other</option>
+              </select>
+              <select id="paymentOwner"></select>
+              <select id="paymentFrequency">
+                <option>One-time</option>
+                <option>Weekly</option>
+                <option>Monthly</option>
+                <option>Yearly</option>
+              </select>
+              <select id="paymentMethod">
+                <option>Credit card</option>
+                <option>Bank</option>
+                <option>Cash</option>
+                <option>Check</option>
+                <option>Other</option>
+              </select>
+              <select id="paymentStatus">
+                <option>Upcoming</option>
+                <option>Paid</option>
+              </select>
+              <button type="submit">Add payment</button>
+            </form>
+          </article>
+
+          <article class="card">
+            <h2>Due this week</h2>
+            <div id="paymentsDueWeek" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Due this month</h2>
+            <div id="paymentsDueMonth" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Paid this month</h2>
+            <div id="paymentsPaidMonth" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Recurring payments</h2>
+            <div id="paymentsRecurring" class="list"></div>
+          </article>
+
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>All payments & expenses</h2>
+                <p class="muted">Use this as a simple family finance tracker.</p>
+              </div>
+            </div>
+            <div class="filters">
+              <button class="pill active" data-payment-filter="open">Open</button>
+              <button class="pill" data-payment-filter="all">All</button>
+              <button class="pill" data-payment-filter="paid">Paid</button>
+            </div>
+            <div id="paymentList" class="list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="planning" class="screen">
+        <div class="grid">
+          <article class="card wide">
+            <div class="section-title">
+              <div>
+                <h2>Inbox / brain dump</h2>
+                <p class="muted">Capture messy thoughts first, organize them later.</p>
+              </div>
+            </div>
+            <form id="inboxForm" class="inline-form">
+              <input id="inboxText" placeholder="Example: Ask teacher about field trip" required />
+              <select id="inboxType">
+                <option>Unsorted</option>
+                <option>School</option>
+                <option>Home</option>
+                <option>Kids Activity</option>
+                <option>Money</option>
+                <option>Health</option>
+                <option>Other</option>
+              </select>
+              <button type="submit">Add</button>
+            </form>
+            <div id="inboxList" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Tomorrow prep</h2>
+            <form id="prepForm" class="stack-form">
+              <input id="prepText" placeholder="Example: Pack soccer uniform" required />
+              <select id="prepOwner"></select>
+              <input id="prepDate" type="date" />
+              <button type="submit">Add prep item</button>
+            </form>
+            <div id="prepList" class="list"></div>
+          </article>
+
+          <article class="card">
+            <h2>Needs decision</h2>
+            <form id="decisionForm" class="stack-form">
+              <input id="decisionTitle" placeholder="Example: Choose summer camp" required />
+              <select id="decisionOwner"></select>
+              <input id="decisionDue" type="date" />
+              <input id="decisionOptions" placeholder="Options, optional" />
+              <button type="submit">Add decision</button>
+            </form>
+            <div id="decisionList" class="list"></div>
+          </article>
+
+          <article class="card wide">
+            <h2>School & admin tracker</h2>
+            <form id="adminForm" class="admin-form">
+              <input id="adminTitle" placeholder="Form, payment, document, or admin task" required />
+              <select id="adminCategory">
+                <option>School form</option>
+                <option>Payment</option>
+                <option>Medical</option>
+                <option>Document</option>
+                <option>Activity registration</option>
+                <option>Other</option>
+              </select>
+              <select id="adminOwner"></select>
+              <input id="adminDue" type="date" />
+              <input id="adminNotes" placeholder="Notes" />
+              <button type="submit">Add admin item</button>
+            </form>
+            <div id="adminList" class="list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="shopping" class="screen">
+        <article class="card">
+          <div class="section-title">
+            <div>
+              <h2>Shopping list</h2>
+              <p class="muted">Groceries, pharmacy, school supplies, and home items.</p>
+            </div>
+          </div>
+          <form id="shoppingForm" class="inline-form">
+            <input id="shoppingName" placeholder="Add item" required />
+            <select id="shoppingStore">
+              <option>Grocery</option>
+              <option>Costco</option>
+              <option>Pharmacy</option>
+              <option>Target</option>
+              <option>School</option>
+              <option>Home</option>
+              <option>Other</option>
+            </select>
+            <button type="submit">Add</button>
+          </form>
+          <div id="shoppingList" class="list"></div>
+        </article>
+      </section>
+
+      <section id="kids" class="screen">
+        <div id="kidsGrid" class="grid"></div>
+      </section>
+
+
+      <section id="chores" class="screen">
+        <div class="grid">
+          <article class="card wide chores-card">
+            <div class="section-title"><div><p class="eyebrow">Family responsibility</p><h2>Chores & allowance</h2><p class="muted">Track chores, ownership, due dates, completion, and allowance.</p></div></div>
+            <form id="choreForm" class="chore-form parent-only">
+              <input id="choreTitle" placeholder="Chore name, e.g. Clean room" required />
+              <select id="choreChild"></select>
+              <input id="choreDue" type="date" />
+              <input id="choreAllowance" type="number" step="0.01" min="0" placeholder="Allowance $" />
+              <select id="choreFrequency"><option>One-time</option><option>Daily</option><option>Weekly</option><option>Monthly</option></select>
+              <button type="submit">Add chore</button>
+            </form>
+            <div id="allowanceSummary" class="money-summary"></div>
+          </article>
+          <article class="card"><h2>Open chores</h2><div id="openChoresList" class="list"></div></article>
+          <article class="card"><h2>Completed / unpaid</h2><div id="unpaidChoresList" class="list"></div></article>
+          <article class="card wide"><h2>All chores</h2><div id="allChoresList" class="list"></div></article>
+        </div>
+      </section>
+
+      <section id="routines" class="screen">
+        <div class="grid">
+          <article class="card">
+            <h2>Morning checklist</h2>
+            <div id="morningRoutine" class="list"></div>
+            <form class="inline-form routine-form" data-routine="morning">
+              <input placeholder="Add morning item" required />
+              <button>Add</button>
+            </form>
+          </article>
+          <article class="card">
+            <h2>Evening checklist</h2>
+            <div id="eveningRoutine" class="list"></div>
+            <form class="inline-form routine-form" data-routine="evening">
+              <input placeholder="Add evening item" required />
+              <button>Add</button>
+            </form>
+          </article>
+          <article class="card">
+            <h2>Weekly planning</h2>
+            <div id="weeklyRoutine" class="list"></div>
+            <form class="inline-form routine-form" data-routine="weekly">
+              <input placeholder="Add weekly item" required />
+              <button>Add</button>
+            </form>
+          </article>
+        </div>
+      </section>
+
+      <section id="settings" class="screen">
+        
+          <article class="card cloud-card">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Shared family sync</p>
+                <h2>Cloud sync with Firebase</h2>
+                <p class="muted">Use this section to sign in, create your shared family space, and invite your wife/kids. After joining once, the app will auto-detect your family space on other devices.</p>
+              </div>
+            </div>
+
+            <div id="cloudStatus" class="cloud-status">Cloud sync is not configured yet.</div>
+
+            <div class="cloud-grid">
+              <div class="cloud-box">
+                <h3>1. Sign in</h3>
+                <p class="muted">Each family member can sign in with Google, or use email/password as a fallback.</p>
+                <form id="authForm" class="stack-form">
+                  <input id="authEmail" type="email" placeholder="Email" autocomplete="email" />
+                  <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" />
+                  <button type="button" id="googleSignInBtn" class="google-btn" onclick="window.__fccGoogleSignInClick && window.__fccGoogleSignInClick(event)">Sign in with Google</button>
+                  <div class="divider"><span>or use email/password</span></div>
+                  <div class="button-row">
+                    <button type="button" id="loginBtn" onclick="window.__fccEmailSignInClick && window.__fccEmailSignInClick(event)">Sign in</button>
+                    <button type="button" id="signupBtn" class="secondary" onclick="window.__fccEmailSignupClick && window.__fccEmailSignupClick(event)">Create account</button>
+                    <button type="button" id="logoutBtn" class="ghost hidden">Sign out</button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="cloud-box">
+                <h3>2. Create family space</h3>
+                <p class="muted">Do this once, preferably from your phone/account. Then share the Family ID and Invite Code.</p>
+                <button type="button" id="createFamilyBtn">Create shared family space</button>
+                <div id="familyShareBox" class="share-box hidden"></div>
+              </div>
+
+              <div class="cloud-box">
+                <h3>3. Join existing family space</h3>
+                <p class="muted">Your wife/kids use the Family ID and Invite Code once. After that, Google sign-in should auto-open the family space.</p>
+                <form id="joinFamilyForm" class="stack-form">
+                  <input id="joinFamilyId" placeholder="Family ID" autocomplete="off" />
+                  <input id="joinInviteCode" placeholder="Invite Code" autocomplete="off" />
+                  <button type="submit">Join family space</button>
+                </form>
+              </div>
+            </div>
+
+
+
+            <div class="cloud-recovery-panel">
+              <div class="section-title">
+                <div>
+                  <h3>Connection recovery</h3>
+                  <p class="muted">Use this if the app is stuck while connecting to the family space.</p>
+                </div>
+              </div>
+              <div class="button-row">
+                <button id="forceReconnectBtn" type="button" class="secondary">Reconnect now</button>
+                <button id="clearFamilyCacheBtn" type="button" class="ghost">Clear cached Family ID</button>
+              </div>
+              <p id="cloudDebugText" class="muted small-note">Connection step details will appear in the cloud status message above.</p>
+            </div>
+
+
+            <div class="diagnostics-panel">
+              <div class="section-title">
+                <div>
+                  <h3>Diagnostics & friendly errors</h3>
+                  <p class="muted">Use this when the app freezes, does not sync, or behaves unexpectedly.</p>
+                </div>
+              </div>
+              <div class="button-row">
+                <button id="runDiagnosticsBtn" type="button" class="secondary">Run connection check</button>
+                <button id="copyDiagnosticsBtn" type="button" class="ghost">Copy diagnostic report</button>
+                <button id="activateCloudBtn" type="button" class="secondary">Activate sync from readable data</button>
+                <button id="clearDiagnosticsBtn" type="button" class="ghost">Clear diagnostics</button>
+              </div>
+              <div id="diagnosticsSummary" class="diagnostics-summary">No diagnostic messages yet.</div>
+              <div id="diagnosticsList" class="diagnostics-list"></div>
+            </div>
+
+            <div class="family-members-panel">
+              <div class="section-title">
+                <div>
+                  <h3>Family members in this space</h3>
+                  <p class="muted">See who joined the family space, who was recently active, and assign Parent/Kid roles.</p>
+                </div>
+              </div>
+              <div id="familyMembersList" class="members-list">
+                <div class="empty">Sign in and join a family space to see members.</div>
+              </div>
+            </div>
+
+            <p class="muted small-note">Important: do not enter bank account numbers, credit card numbers, passwords, or highly sensitive medical details.</p>
+          </article>
+
+
+        <article class="card">
+          <h2>Family settings</h2>
+          <p class="muted">Change names, export your data, or import a backup.</p>
+          <form id="settingsForm" class="settings-form">
+            <label>Family name
+              <input id="familyName" />
+            </label>
+            <label>Parent 1
+              <input id="parent1" />
+            </label>
+            <label>Parent 2
+              <input id="parent2" />
+            </label>
+            <label>Children names, comma separated
+              <input id="childrenNames" placeholder="Child 1, Child 2, Child 3" />
+            </label>
+            <button type="submit">Save settings</button>
+          </form>
+          <div class="settings-actions">
+            <button id="exportBtn" class="secondary">Export backup</button>
+            <label class="file-label">
+              Import backup
+              <input id="importFile" type="file" accept="application/json" />
+            </label>
+            <button id="resetBtn" class="danger hidden">Reset demo data</button>
+          </div>
+          
+          
+          <div id="roleSetupPanel" class="role-setup-panel hidden">
+            <div class="section-title">
+              <div>
+                <h3>Automatic role assignment</h3>
+                <p class="muted">Map parent and kid Google accounts so roles are assigned automatically after login.</p>
+              </div>
+            </div>
+
+            <form id="roleSetupForm" class="role-setup-form">
+              <label>
+                Parent/Admin emails
+                <textarea id="parentEmailsInput" rows="3" placeholder="One email per line or comma separated, e.g. elad@gmail.com, maayan@gmail.com"></textarea>
+              </label>
+
+              <label>
+                Kid email to child mapping
+                <textarea id="kidMappingsInput" rows="5" placeholder="Format: kid-email@gmail.com = Child Name&#10;Example: maya@gmail.com = Maya"></textarea>
+              </label>
+
+              <label>
+                Default role for unknown new members
+                <select id="defaultRoleSelect">
+                  <option value="viewer">viewer</option>
+                  <option value="kid">kid</option>
+                  <option value="parent">parent</option>
+                </select>
+              </label>
+
+              <div class="button-row">
+                <button type="submit">Save role rules</button>
+                <button id="applyRoleRulesBtn" type="button" class="secondary">Re-apply role rules now</button>
+              </div>
+            </form>
+
+            <div id="roleRulesSummary" class="role-rules-summary"></div>
+            <div id="roleSetupVisibilityNote" class="role-visibility-note"></div>
+            <p class="muted small-note">Recommended default for unknown users is <strong>viewer</strong>. Family owner is always treated as owner.</p>
+          </div>
+
+          <div id="adminControls" class="admin-controls hidden">
+            <div class="section-title">
+              <div>
+                <h3>Admin controls</h3>
+                <p class="muted">Visible only to family admins. Use this only if you need to clear shared family data.</p>
+              </div>
+            </div>
+            <div class="admin-warning">
+              This reset clears shared tasks, homework, payments, shopping, planning items, calendar items, and routines.
+              It keeps the family name and member access.
+            </div>
+            <div class="button-row">
+              <button id="adminResetSharedBtn" class="danger" type="button">Reset shared family data</button>
+            </div>
+          </div>
+
+          <p class="muted small-note">Cloud sync is active after you sign in and join/create a family space.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
