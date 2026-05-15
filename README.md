@@ -1,43 +1,32 @@
-# Family Command Center PWA V4.8.24 — Bucket Choice Fix
+# Family Command Center PWA V4.8.25 — Protect Local Edits Until Cloud Save
 
-This version fixes V4.8.23 where the app did not ask which bucket to use.
+This version fixes the issue where an edit changes immediately in the app, but disappears after refresh.
 
 ## Root cause
 
-The bucket-choice logic existed, but the active V4.8 quick-capture submit handler was still bypassing it.
+The edit worked locally, but after refresh the app loaded the older Firestore state and overwrote the local edited copy before the edit was safely saved to cloud.
 
-## Fixed
+## Fixed in V4.8.25
 
-The active Quick Capture handler now asks when a prompt can fit multiple buckets.
+- Local edits are marked as pending cloud save.
+- Pending status is stored in localStorage.
+- If the app refreshes before cloud save completes, it protects the local edited copy.
+- Older cloud snapshots are skipped while local edits are pending.
+- Once cloud reconnects, pending local edits are pushed back to Firestore.
+- Pending flag is cleared after successful cloud save.
 
-Example:
+## How to test
 
-```text
-Pay for Hebrew lesson $260 by 15 May for Daniel
-```
-
-Expected prompt:
-
-```text
-1. Payment + calendar due-date reminder
-2. Calendar event
-```
-
-Choose:
+1. Open:
 
 ```text
-1
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-25
 ```
 
-Expected result:
-
-- Payment is created
-- Calendar due-date reminder is created
-
-## Open after upload
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-24
-```
+2. Add a payment using Quick Capture.
+3. Edit the amount.
+4. Refresh immediately.
+5. Confirm the edited amount remains.
+6. Check Firestore `families → FAM-59ATQF5R → state → main`.
 
 No Firestore rules change is required if V4.8.20 or V4.8.15 rules are already published.

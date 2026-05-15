@@ -1,4 +1,5 @@
 const STORAGE_KEY = "family-command-center-state";
+const PENDING_LOCAL_CHANGE_KEY = "family-command-center-pending-local-change";
 const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id";
 const LEGACY_CLOUD_FAMILY_ID_KEYS = [
   "family-command-center-cloud-family-id-v4-8",
@@ -227,8 +228,66 @@ function loadState() {
   }
 }
 
+
+function markPendingLocalChange(reason = "local change") {
+  const payload = {
+    reason,
+    at: new Date().toISOString(),
+    version: typeof APP_VERSION !== "undefined" ? APP_VERSION : ""
+  };
+  try {
+    localStorage.setItem(PENDING_LOCAL_CHANGE_KEY, JSON.stringify(payload));
+  } catch {}
+  if (typeof cloud !== "undefined" && cloud) {
+    cloud.pendingLocalChanges = true;
+    cloud.lastLocalChangeAt = payload.at;
+  }
+}
+
+function clearPendingLocalChange() {
+  try {
+    localStorage.removeItem(PENDING_LOCAL_CHANGE_KEY);
+  } catch {}
+  if (typeof cloud !== "undefined" && cloud) {
+    cloud.pendingLocalChanges = false;
+  }
+}
+
+function getPendingLocalChange() {
+  try {
+    const raw = localStorage.getItem(PENDING_LOCAL_CHANGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasRecentPendingLocalChange(maxMinutes = 30) {
+  const pending = getPendingLocalChange();
+  if (!pending?.at) return false;
+
+  const ageMs = Date.now() - new Date(pending.at).getTime();
+  return Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= maxMinutes * 60 * 1000;
+}
+
+function protectLocalPendingFromRemote(sourceLabel = "cloud snapshot") {
+  if (!hasRecentPendingLocalChange()) return false;
+
+  if (typeof setCloudStatus === "function") {
+    setCloudStatus(`Local edits are waiting to save. Skipping older ${sourceLabel} so your changes are not lost.`, "warn");
+  }
+
+  if (typeof scheduleCloudSave === "function") {
+    setTimeout(scheduleCloudSave, 800);
+  }
+
+  return true;
+}
+
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  markPendingLocalChange("saveState");
   if (typeof scheduleCloudSave === "function") scheduleCloudSave();
 }
 
@@ -3210,7 +3269,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.24";
+const APP_VERSION = "4.8.25";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3453,6 +3512,11 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
 
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
+    if (protectLocalPendingFromRemote("cloud state update")) {
+      cloud.ready = true;
+      renderCloudPanel();
+      return;
+    }
     cloud.applyingRemote = true;
     state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -3465,6 +3529,12 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
   });
 
   if (typeof startPresenceHeartbeat === "function") startPresenceHeartbeat();
+
+  // Push pending local changes after activation so refresh does not lose edits.
+  if (hasRecentPendingLocalChange()) {
+    setTimeout(scheduleCloudSave, 1000);
+  }
+
   render();
 
   addDiagnosticInfo(
@@ -3772,6 +3842,12 @@ async function connectFamily(familyId) {
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
 
+    if (protectLocalPendingFromRemote("cloud state update")) {
+      cloud.ready = true;
+      renderCloudPanel();
+      return;
+    }
+
     cloud.applyingRemote = true;
     state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -3785,12 +3861,17 @@ async function connectFamily(familyId) {
   });
 
   startPresenceHeartbeat();
+
+  // Push pending local changes after reconnect so refresh does not lose edits.
+  if (hasRecentPendingLocalChange()) {
+    setTimeout(scheduleCloudSave, 1000);
+  }
 }
 
 function scheduleCloudSave() {
   if (!cloud || !cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
   clearTimeout(cloud.saveTimer);
-  cloud.saveTimer = setTimeout(saveCloudNow, 700);
+  cloud.saveTimer = setTimeout(saveCloudNow, 500);
 }
 
 async function saveCloudNow() {
@@ -3800,10 +3881,17 @@ async function saveCloudNow() {
     await cloud.fb.setDoc(cloud.stateRef, {
       data: state,
       updatedAt: cloud.fb.serverTimestamp(),
-      updatedBy: cloud.user.uid
+      updatedBy: cloud.user.uid,
+      updatedByEmail: cloud.user.email || "",
+      clientUpdatedAt: new Date().toISOString(),
+      appVersion: typeof APP_VERSION !== "undefined" ? APP_VERSION : ""
     }, { merge: true });
+
+    clearPendingLocalChange();
+    setCloudStatus(`Cloud save completed for ${cloud.user.email || "signed-in user"}.`, "good");
   } catch (error) {
     cloud.lastError = error.message;
+    markPendingLocalChange("cloud save failed");
     setCloudStatus(`Could not save to cloud: ${error.message}`, "bad");
   }
 }

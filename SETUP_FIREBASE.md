@@ -1,4 +1,4 @@
-# V4.8.24 Setup Notes
+# V4.8.25 Setup Notes
 
 No Firestore rules change is required.
 
@@ -9,20 +9,19 @@ Upload all files to GitHub Pages.
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-24
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-25
 ```
 
 ## Test
 
-Use Quick Capture:
+1. Create payment:
+   Pay for Hebrew lesson $260 by 15 May for Daniel
 
-```text
-Pay for Hebrew lesson $260 by 15 May for Daniel
-```
+2. Edit amount to 270.
+
+3. Refresh immediately.
 
 Expected:
-
-1. App asks which bucket to use.
-2. Choose payment.
-3. Payment is created.
-4. Calendar due-date reminder is created.
+- Amount remains 270.
+- App shows a warning if local edit is still waiting to save.
+- Cloud save completes after reconnect.
