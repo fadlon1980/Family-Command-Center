@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.25",
+  "name": "Family Command Center V4.8.26",
   "short_name": "Family Hub",
-  "description": "Protects local edits from being overwritten by older cloud state before cloud save completes.",
+  "description": "Stable baseline with REST-only cloud save for state/main to avoid SDK write timeouts.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

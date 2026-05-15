@@ -1,6 +1,6 @@
-# V4.8.25 Setup Notes
+# V4.8.26 Setup Notes
 
-No Firestore rules change is required.
+No Firestore rules change is required if V4.8.20 or V4.8.15 rules are already published.
 
 ## Upload
 
@@ -9,19 +9,23 @@ Upload all files to GitHub Pages.
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-25
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-26
 ```
 
-## Test
+## Test save
 
-1. Create payment:
-   Pay for Hebrew lesson $260 by 15 May for Daniel
+1. Add payment:
+   Pay for ROOT SAVE TEST $11 by tomorrow for Daniel
 
-2. Edit amount to 270.
+2. Edit amount to 12.
 
-3. Refresh immediately.
+3. Wait for:
+   Cloud save completed
+
+4. Check Firestore:
+   families → FAM-59ATQF5R → state → main
 
 Expected:
-- Amount remains 270.
-- App shows a warning if local edit is still waiting to save.
-- Cloud save completes after reconnect.
+- data.payments contains ROOT SAVE TEST
+- amount is 12
+- writeMethod is stable-rest-save

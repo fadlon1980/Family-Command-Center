@@ -3269,7 +3269,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.25";
+const APP_VERSION = "4.8.26";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3407,6 +3407,7 @@ function getDiagnosticReportText() {
     `Family ID: ${cloud?.familyId || getStoredFamilyId?.() || "none"}`,
     `Cloud ready: ${Boolean(cloud?.ready)}`,
     `Last error: ${cloud?.lastError || "none"}`,
+    `Pending local change: ${JSON.stringify(getPendingLocalChange?.() || null)}`,
     `User agent: ${navigator.userAgent}`,
     ``,
     `Diagnostics:`
@@ -3874,27 +3875,154 @@ function scheduleCloudSave() {
   cloud.saveTimer = setTimeout(saveCloudNow, 500);
 }
 
-async function saveCloudNow() {
-  if (!cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
+
+function getFirestoreProjectIdForRestSave() {
+  return window.FAMILY_FIREBASE_CONFIG?.projectId
+    || window.firebaseConfig?.projectId
+    || window.FIREBASE_CONFIG?.projectId
+    || "";
+}
+
+function firestoreRestEncodeValue(value) {
+  if (value === null || typeof value === "undefined") return { nullValue: null };
+
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "boolean") return { booleanValue: value };
+
+  if (typeof value === "number") {
+    if (Number.isInteger(value)) return { integerValue: String(value) };
+    return { doubleValue: value };
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      arrayValue: {
+        values: value.map(item => firestoreRestEncodeValue(item))
+      }
+    };
+  }
+
+  if (typeof value === "object") {
+    const fields = {};
+    Object.entries(value).forEach(([key, val]) => {
+      if (typeof val !== "undefined") {
+        fields[key] = firestoreRestEncodeValue(val);
+      }
+    });
+    return { mapValue: { fields } };
+  }
+
+  return { stringValue: String(value) };
+}
+
+function firestoreRestEncodeFields(object) {
+  const fields = {};
+  Object.entries(object || {}).forEach(([key, value]) => {
+    if (typeof value !== "undefined") fields[key] = firestoreRestEncodeValue(value);
+  });
+  return fields;
+}
+
+function encodeFirestoreDocPath(path) {
+  return String(path || "")
+    .split("/")
+    .filter(Boolean)
+    .map(part => encodeURIComponent(part))
+    .join("/");
+}
+
+async function firestoreRestPatchStable(docPath, fieldsObject, timeoutMs = 30000) {
+  if (!cloud.user) throw new Error("Not signed in.");
+
+  const projectId = getFirestoreProjectIdForRestSave();
+  if (!projectId) throw new Error("Missing Firebase projectId for REST save.");
+
+  const token = await cloud.user.getIdToken(true);
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${encodeFirestoreDocPath(docPath)}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    await cloud.fb.setDoc(cloud.stateRef, {
-      data: state,
-      updatedAt: cloud.fb.serverTimestamp(),
-      updatedBy: cloud.user.uid,
-      updatedByEmail: cloud.user.email || "",
-      clientUpdatedAt: new Date().toISOString(),
-      appVersion: typeof APP_VERSION !== "undefined" ? APP_VERSION : ""
-    }, { merge: true });
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ fields: firestoreRestEncodeFields(fieldsObject) }),
+      signal: controller.signal
+    });
+
+    const text = await response.text();
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
+
+    if (!response.ok) {
+      const message = payload?.error?.message || response.statusText || text || "Unknown REST save error";
+      throw new Error(`REST save failed ${response.status}: ${message}`);
+    }
+
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function stateSaveSummary() {
+  try {
+    return {
+      tasks: state.tasks?.length || 0,
+      events: state.events?.length || 0,
+      payments: state.payments?.length || 0,
+      shopping: state.shopping?.length || 0,
+      schoolItems: state.schoolItems?.length || 0,
+      chores: state.chores?.length || 0,
+      bytes: new Blob([JSON.stringify(state)]).size
+    };
+  } catch {
+    return { bytes: 0 };
+  }
+}
+
+
+async function saveCloudNow() {
+  if (!cloud.ready || !cloud.user || cloud.applyingRemote) return;
+
+  const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+  if (!familyId) {
+    markPendingLocalChange("missing family id during cloud save");
+    setCloudStatus("Could not save to cloud: missing Family ID.", "bad");
+    return;
+  }
+
+  try {
+    setCloudStatus("Saving local changes to Firestore...", "warn");
+
+    const summary = stateSaveSummary();
+    await firestoreRestPatchStable(
+      `families/${familyId}/state/main`,
+      {
+        data: state,
+        updatedBy: cloud.user.uid,
+        updatedByEmail: cloud.user.email || "",
+        clientUpdatedAt: new Date().toISOString(),
+        appVersion: typeof APP_VERSION !== "undefined" ? APP_VERSION : "",
+        writeMethod: "stable-rest-save",
+        clientSummary: summary
+      },
+      30000
+    );
 
     clearPendingLocalChange();
     setCloudStatus(`Cloud save completed for ${cloud.user.email || "signed-in user"}.`, "good");
   } catch (error) {
     cloud.lastError = error.message;
-    markPendingLocalChange("cloud save failed");
+    markPendingLocalChange("cloud REST save failed");
     setCloudStatus(`Could not save to cloud: ${error.message}`, "bad");
   }
 }
+
 
 
 
