@@ -1,53 +1,58 @@
-# Family Command Center PWA V4.8.22 — Edit Items
+# Family Command Center PWA V4.8.23 — Quick Capture Bucket Choice
 
-This version is based on the working V4.8.21 quick-capture baseline and adds lightweight editing.
+This version is based on V4.8.22 and improves Quick Capture when the sentence can fit more than one bucket.
 
-## New
+## Problem fixed
 
-Most lists now include an **Edit** button:
-
-- Tasks
-- Calendar events
-- Payments
-- Homework / exams
-- Shopping
-- Prep items
-- Decisions
-- Admin / school items
-
-## Why this matters
-
-If Quick Capture creates something like:
+Example:
 
 ```text
 Pay for Hebrew lesson $260 by 15 May for Daniel
 ```
 
-you can now edit the generated payment fields:
+This can look like:
 
-- payment name
-- amount
-- due date
-- category
-- owner / child
-- frequency
-- method
-- status
-- paid date
-- notes
+- Payment, because it says `pay` and `$260`
+- Calendar event, because it says `lesson`
+- Homework/school item, depending on wording
 
-When editing a payment, the app will ask whether to update matching linked calendar reminders too.
+Before V4.8.23, the app could place it in the wrong bucket.
 
-## How editing works in V4.8.22
+## New behavior
 
-This is a lightweight first version using browser prompt dialogs. It is intentionally small and stable.
+When Quick Capture detects multiple possible buckets, it asks you to choose:
 
-Later we can replace it with a nicer full edit form / modal.
+```text
+1. Payment + calendar due-date reminder
+2. Calendar event
+3. Homework / exam
+```
+
+For the Hebrew lesson example, choose:
+
+```text
+1
+```
+
+The app will create:
+
+- Payment
+- Calendar due-date reminder
+
+## Recommended examples
+
+```text
+Pay for Hebrew lesson $260 by 15 May for Daniel
+Pay soccer fee $120 by Monday for Maya
+Daniel Hebrew lesson Tuesday 5pm
+Daniel science exam next Friday
+Maya math homework due tomorrow
+```
 
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-22
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-23
 ```
 
 No Firestore rules change is required if V4.8.20 rules are already published.

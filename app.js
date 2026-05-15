@@ -1823,6 +1823,117 @@ function smartIsEvent(text) {
   return /\b(lesson|practice|appointment|meeting|game|class|dentist|doctor|activity)\b/.test(lower) || Boolean(extractTime(text));
 }
 
+
+function smartQuickBucketCandidates(text) {
+  const amount = smartExtractAmount(text);
+  const lower = String(text || "").toLowerCase();
+  const candidates = [];
+
+  if (smartIsPayment(text, amount)) {
+    candidates.push({
+      key: "payment",
+      label: "Payment + calendar due-date reminder",
+      reason: amount ? `found amount $${amount}` : "found payment words"
+    });
+  }
+
+  if (smartIsExamOrHomework(text)) {
+    candidates.push({
+      key: "schoolwork",
+      label: "Homework / exam",
+      reason: "found homework/exam/school words"
+    });
+  }
+
+  if (smartIsEvent(text)) {
+    candidates.push({
+      key: "event",
+      label: "Calendar event",
+      reason: "found event/lesson/appointment/time words"
+    });
+  }
+
+  if (/\b(buy|shopping|grocery|groceries|need to buy)\b/.test(lower)) {
+    candidates.push({
+      key: "shopping",
+      label: "Shopping",
+      reason: "found shopping words"
+    });
+  }
+
+  if (/\b(remind|remember|prepare|pack)\b/.test(lower)) {
+    candidates.push({
+      key: "prep",
+      label: "Prep / reminder task",
+      reason: "found reminder/prep words"
+    });
+  }
+
+  // Remove duplicates while preserving order.
+  return candidates.filter((item, index, all) => all.findIndex(x => x.key === item.key) === index);
+}
+
+function smartPromptBucketChoice(text, requestedType) {
+  const requested = requestedType || "auto";
+  const candidates = smartQuickBucketCandidates(text);
+
+  if (!candidates.length) return requested;
+
+  // If the dropdown explicitly says something other than auto but text strongly looks like another bucket,
+  // ask before forcing the selected dropdown bucket.
+  const requestedCandidate = candidates.find(c => c.key === requested);
+  const requestedLooksSafe = requested === "auto" || Boolean(requestedCandidate);
+
+  if (candidates.length === 1 && requestedLooksSafe) {
+    return requested === "auto" ? candidates[0].key : requested;
+  }
+
+  const lines = [
+    "This quick capture can fit more than one bucket.",
+    "",
+    `Text: ${text}`,
+    "",
+    "Choose one option by number:",
+    ""
+  ];
+
+  candidates.forEach((candidate, index) => {
+    lines.push(`${index + 1}. ${candidate.label} (${candidate.reason})`);
+  });
+
+  if (requested !== "auto" && !requestedCandidate) {
+    lines.push(`${candidates.length + 1}. Use selected dropdown bucket: ${requested}`);
+  }
+
+  lines.push("");
+  lines.push("Recommended: choose Payment when the sentence includes an amount or the word pay.");
+  lines.push("Cancel = do nothing.");
+
+  const answer = prompt(lines.join("\n"), candidates[0]?.key === "payment" ? "1" : "");
+  if (answer === null) return "__cancel__";
+
+  const trimmed = String(answer).trim().toLowerCase();
+  const number = Number(trimmed);
+
+  if (Number.isInteger(number) && number >= 1 && number <= candidates.length) {
+    return candidates[number - 1].key;
+  }
+
+  if (Number.isInteger(number) && requested !== "auto" && number === candidates.length + 1) {
+    return requested;
+  }
+
+  const byKey = candidates.find(c => c.key === trimmed);
+  if (byKey) return byKey.key;
+
+  const byLabel = candidates.find(c => c.label.toLowerCase().includes(trimmed));
+  if (byLabel) return byLabel.key;
+
+  return candidates[0]?.key || requested;
+}
+
+
+
 function smartQuickCaptureCreate(text, requestedType) {
   const amount = smartExtractAmount(text);
   const date = smartExtractDate(text);
@@ -1830,7 +1941,7 @@ function smartQuickCaptureCreate(text, requestedType) {
   const lower = String(text || "").toLowerCase();
   const forced = requestedType && requestedType !== "auto";
 
-  if (!forced && smartIsPayment(text, amount)) {
+  if (requestedType === "payment" || (!forced && smartIsPayment(text, amount))) {
     const paid = lower.startsWith("paid ");
     const name = smartPaymentTitle(text, child);
     state.payments.push({
@@ -1864,7 +1975,7 @@ function smartQuickCaptureCreate(text, requestedType) {
     return true;
   }
 
-  if (!forced && smartIsExamOrHomework(text)) {
+  if (requestedType === "schoolwork" || (!forced && smartIsExamOrHomework(text))) {
     const itemType = lower.includes("exam") ? "Exam" : lower.includes("test") ? "Test" : lower.includes("quiz") ? "Quiz" : lower.includes("project") ? "Project" : lower.includes("reading") ? "Reading" : "Homework";
     state.schoolItems.push({
       id: uid(),
@@ -1891,7 +2002,7 @@ function smartQuickCaptureCreate(text, requestedType) {
     return true;
   }
 
-  if (!forced && smartIsEvent(text)) {
+  if (requestedType === "event" || (!forced && smartIsEvent(text))) {
     state.events.push({
       id: uid(),
       title: smartCleanDatePhrases(text).replace(/\s+/g, " ").trim() || text,
@@ -1915,17 +2026,21 @@ document.getElementById("quickForm").addEventListener("submit", event => {
   const requested = document.getElementById("quickType").value;
   if (!text) return;
 
-  // V4.8.21: smart multi-create for natural language quick capture.
+  // V4.8.23: if the text can fit more than one bucket, ask the user before creating records.
+  const resolvedBucket = smartPromptBucketChoice(text, requested);
+  if (resolvedBucket === "__cancel__") return;
+
+  // V4.8.21+: smart multi-create for natural language quick capture.
   // Example: "Pay for Hebrew lesson $260 by 15 May for Daniel"
-  // Creates a payment and a calendar due-date reminder.
-  if (smartQuickCaptureCreate(text, requested)) {
+  // Creates a payment and a calendar due-date reminder when bucket = payment.
+  if (smartQuickCaptureCreate(text, resolvedBucket)) {
     document.getElementById("quickText").value = "";
     saveState();
     render();
     return;
   }
 
-  const type = inferQuickType(text, requested);
+  const type = inferQuickType(text, resolvedBucket);
   const date = smartExtractDate(text) || extractDate(text);
 
   if (type === "shopping") {
@@ -3095,7 +3210,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.22";
+const APP_VERSION = "4.8.23";
 const diagnostics = {
   entries: [],
   maxEntries: 30

@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.22",
+  "name": "Family Command Center V4.8.23",
   "short_name": "Family Hub",
-  "description": "Adds lightweight Edit buttons for items created manually or from Quick Capture.",
+  "description": "Adds bucket choice prompt for ambiguous Quick Capture inputs.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
