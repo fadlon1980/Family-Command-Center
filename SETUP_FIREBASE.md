@@ -1,29 +1,30 @@
-# V4.8.29 Setup Notes
+const CACHE_NAME = "family-command-center-v4-8-30";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./firebase-config.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
+];
 
-No Firestore rules change is required.
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
+  self.skipWaiting();
+});
 
-## Upload
+self.addEventListener("activate", event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
+  );
+  self.clients.claim();
+});
 
-Upload all files to GitHub Pages.
-
-Open:
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-29
-```
-
-## Check
-
-Confirm the navigation labels show:
-
-```text
-Payments
-School
-```
-
-instead of:
-
-```text
-Money
-Homework
-```
+self.addEventListener("fetch", event => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then(cached => cached || fetch(event.request).catch(() => caches.match("./index.html")))
+  );
+});
