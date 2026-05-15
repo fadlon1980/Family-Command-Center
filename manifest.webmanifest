@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.30",
+  "name": "Family Command Center V4.8.31",
   "short_name": "Family Hub",
-  "description": "Phase 1 quota burn fix, prevents role assignment listener write loops.",
+  "description": "Family Command Center, your shared hub for tasks, calendar, school, payments, and more.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

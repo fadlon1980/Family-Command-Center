@@ -1,21 +1,55 @@
-# V4.8.30 Setup Notes
+# V4.8.31 Setup Notes
 
-No Firestore rules change is required if the V4.8.27 safe manual-save rules are already published.
-
-## Upload
+## Step 1 — Upload to GitHub
 
 Upload all files to GitHub Pages.
 
-Open:
+## Step 2 — Publish Firestore rules
+
+This version includes updated safety rules.
+
+Go to:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-30
+Firebase Console → Firestore Database → Rules
 ```
 
-## Test Phase 1
+Paste the full content of:
 
-1. Open app and sign in.
-2. Keep app idle for 5 minutes.
-3. Check Firebase usage.
-4. Writes should not continue increasing.
-5. If you click Re-apply role rules and roles already match, the app should say no writes were needed.
+```text
+firestore.rules
+```
+
+Click:
+
+```text
+Publish
+```
+
+## Step 3 — Open the app
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-31
+```
+
+Use hard refresh once:
+
+```text
+Ctrl + Shift + R
+```
+
+## Step 4 — Verify no write loop
+
+1. Open the app.
+2. Do not click Save to cloud.
+3. Leave it idle for 5–10 minutes.
+4. Check Firebase Usage.
+5. Writes should not keep increasing.
+
+## Step 5 — After quota resets, test one manual save
+
+1. Pull latest.
+2. Add one small item.
+3. Click Save to cloud once.
+4. Check `families → FAM-59ATQF5R → state → main`.
+5. Confirm `writeMethod = manual-save-mode`.

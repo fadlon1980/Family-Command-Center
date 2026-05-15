@@ -1,52 +1,59 @@
-# Family Command Center PWA V4.8.30 — Phase 1 Quota Burn Fix
+# Family Command Center PWA V4.8.31 — Rules + Service Worker Safety
 
-This version is based on V4.8.29 and applies Phase 1 from the external review report.
+This version is based on V4.8.30 and focuses only on safety.
 
-## Phase 1 fixes included
+## What changed
 
-### Issue 1.1 — autoAssignCurrentUserRole write loop
+### 1. Firestore rules hardening
 
-Fixed:
+The included `firestore.rules` keeps the V4.8.27 manual-save protection and adds extra hardening:
 
-- Skip writing if role and childName already match.
-- Remove `roleAutoAssignedAt: serverTimestamp()`.
-- Keep owner/admin downgrade protection.
+- only `families/{familyId}/state/main` can be written
+- writes require `writeMethod == "manual-save-mode"`
+- writes require `updatedBy == request.auth.uid`
+- writes require `updatedByEmail == request.auth.token.email`
+- only expected top-level state fields are allowed
+- `/users/{uid}` writes remain blocked
+- member updates are restricted to family managers
+- family `createdBy` cannot be changed
+- arbitrary `state/{docId}` documents are blocked
 
-Why:
+### 2. Service worker safety
 
-`serverTimestamp()` changes every write, which can retrigger the members `onSnapshot` listener and create a write loop.
+The service worker is updated to reduce risk from old cached app versions:
 
-### Issue 1.2 — applyRoleRulesToAllMembers unnecessary writes
+- new cache name: `family-command-center-v4-8-31`
+- deletes old caches on activation
+- calls `skipWaiting()` and `clients.claim()`
+- uses network-first for navigation and HTML
+- never caches Firebase / Google API calls
+- uses stale-while-revalidate for static files
 
-Fixed:
+### 3. Stable manifest description
 
-- Skip members whose role and childName already match.
-- Remove `roleAutoAssignedAt: serverTimestamp()`.
-- Show how many member records were actually updated.
+The manifest description is no longer a changelog. It now describes the app.
 
-## Still included from V4.8.29
+## Still included
 
+- Phase 1 quota-burn fix from V4.8.30
 - Manual cloud save mode
 - Global Manual Save Bar
 - No automatic cloud save
+- No background write retry loops
 - Payments / School labels
-- No presence heartbeat writes
-- Profile mapping writes disabled on login
 
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-30
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-31
 ```
 
-## Firestore rules
+## Important setup step
 
-No Firestore rules change is required if V4.8.27 safe manual-save rules are already published.
+Publish the included `firestore.rules`:
 
-## Safe test
+```text
+Firebase Console → Firestore Database → Rules → paste firestore.rules → Publish
+```
 
-1. Open the app.
-2. Do not click Save to cloud yet if quota is still exceeded.
-3. Watch Firebase usage for 5–10 minutes.
-4. Confirm writes do not keep increasing while the app is idle.
-5. After quota resets, test one manual save only.
+Publishing rules does not consume Firestore document write quota.

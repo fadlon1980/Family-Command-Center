@@ -1073,3 +1073,17 @@ body {
     flex: 1;
   }
 }
+
+
+/* V4.8.31 safety/polish styles */
+.cloud-status.good { border-color: var(--ok); color: var(--ok); }
+.cloud-status.warn { border-color: var(--warning); color: #92400e; }
+.cloud-status.bad { border-color: var(--danger); color: var(--danger); }
+.member-status.active { background: var(--ok-soft); color: #166534; }
+.member-status.away { background: #f1f5f9; color: var(--muted); }
+.badge.calendar { background: #dcfce7; color: #166534; }
+.role-chip.kid { background: #fef3c7; color: #92400e; }
+.role-chip.parent, .role-chip.owner, .role-chip.admin { background: #dcfce7; color: #166534; }
+.icon-btn:hover { background: #eef2ff; border-color: #bfdbfe; }
+.google-btn:hover { background: #f8fafc; border-color: #bfdbfe; }
+.danger:hover { background: #fecaca; }

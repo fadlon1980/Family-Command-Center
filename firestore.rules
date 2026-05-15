@@ -1,12 +1,18 @@
 rules_version = '2';
 
-// V4.8.20 rollback package keeps V4.8.15 owner-aware Firestore rules.
-// Fixed owner emails:
-// - fadlon1980@gmail.com
-// - fadlonmay@gmail.com
+// V4.8.31 Safe Manual Save Rules
+// Purpose:
+// 1. Prevent old app versions from creating automatic write loops.
+// 2. Allow reading the family data.
+// 3. Allow writing families/{familyId}/state/main only from manual-save mode.
+// 4. Block old /users profile mapping writes.
+// 5. Restrict member/presence writes.
+// 6. Restrict family document updates and protect createdBy.
+// 7. Block arbitrary state documents such as state/anything-other-than-main.
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() {
       return request.auth != null;
     }
@@ -20,13 +26,17 @@ service cloud.firestore {
         );
     }
 
+    function memberPath(familyId) {
+      return /databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid);
+    }
+
     function memberDoc(familyId) {
-      return get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+      return get(memberPath(familyId));
     }
 
     function isMember(familyId) {
       return signedIn()
-        && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+        && exists(memberPath(familyId));
     }
 
     function isOriginalCreator(familyId) {
@@ -43,54 +53,121 @@ service cloud.firestore {
     }
 
     function isFamilyManager(familyId) {
-      return isOriginalCreator(familyId)
-        || isFixedOwnerEmail()
+      return isFixedOwnerEmail()
+        || isOriginalCreator(familyId)
         || isRoleOwnerOrAdmin(familyId);
     }
 
+    function canReadFamily(familyId) {
+      return isFixedOwnerEmail()
+        || isMember(familyId)
+        || isOriginalCreator(familyId);
+    }
+
+    function isExpectedManualStatePayload() {
+      return request.resource.data.keys().hasOnly([
+          "data",
+          "updatedBy",
+          "updatedByEmail",
+          "clientUpdatedAt",
+          "appVersion",
+          "writeMethod",
+          "clientSummary"
+        ])
+        && request.resource.data.keys().hasAll([
+          "data",
+          "updatedBy",
+          "updatedByEmail",
+          "clientUpdatedAt",
+          "appVersion",
+          "writeMethod"
+        ]);
+    }
+
+    function hasSafeClientSummary() {
+      return !("clientSummary" in request.resource.data)
+        || (
+          request.resource.data.clientSummary is map
+          && (
+            !("bytes" in request.resource.data.clientSummary)
+            || request.resource.data.clientSummary.bytes <= 800000
+          )
+        );
+    }
+
+    function isManualStateSave(familyId, docId) {
+      return docId == "main"
+        && signedIn()
+        && canReadFamily(familyId)
+        && isExpectedManualStatePayload()
+        && hasSafeClientSummary()
+
+        // This blocks older app versions and automatic save loops.
+        && request.resource.data.writeMethod == "manual-save-mode"
+
+        // User identity must match the signed-in account.
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedByEmail == request.auth.token.email;
+    }
+
     match /users/{uid} {
-      allow read, write: if signedIn() && request.auth.uid == uid;
+      allow read: if signedIn() && request.auth.uid == uid;
+
+      // Disabled to prevent old app versions from repeatedly writing
+      // user profile / family mapping documents.
+      allow create, update, delete: if false;
     }
 
     match /families/{familyId} {
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid;
 
-      allow read: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
-      allow update: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
+      allow read: if canReadFamily(familyId);
+
+      // Managers may update the family document, but cannot change ownership.
+      allow update: if isFamilyManager(familyId)
+        && request.resource.data.createdBy == resource.data.createdBy;
+
       allow delete: if false;
 
       match /members/{uid} {
-        allow read: if isMember(familyId)
-          || isOriginalCreator(familyId)
-          || isFixedOwnerEmail()
+        allow read: if canReadFamily(familyId)
           || (signedIn() && request.auth.uid == uid);
 
+        // Joining/repair should be rare. Fixed owners/original creator/invite-code users may create own member record.
         allow create: if signedIn()
+          && request.auth.uid == uid
           && (
-            isFamilyManager(familyId)
-            || (
-              request.auth.uid == uid
-              && (
-                isOriginalCreator(familyId)
-                || isFixedOwnerEmail()
-                || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
-              )
-            )
+            isFixedOwnerEmail()
+            || isOriginalCreator(familyId)
+            || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
           );
 
+        // Restrict member updates to family managers only, and block noisy presence fields.
         allow update: if isFamilyManager(familyId)
-          || (
-            signedIn()
-            && request.auth.uid == uid
-            && request.resource.data.role == resource.data.role
-          );
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "email",
+            "displayName",
+            "photoURL",
+            "role",
+            "childName",
+            "updatedAt",
+            "updatedBy",
+            "roleAutoAssigned",
+            "roleAutoAssignedBy"
+          ]);
 
         allow delete: if isFamilyManager(familyId);
       }
 
       match /state/{docId} {
-        allow read, write: if isMember(familyId) || isOriginalCreator(familyId) || isFixedOwnerEmail();
+        allow read: if canReadFamily(familyId);
+
+        // Main protection:
+        // Only the safe manual save payload can write the shared family state.
+        allow create, update: if isManualStateSave(familyId, docId);
+
+        allow delete: if false;
       }
     }
   }
