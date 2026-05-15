@@ -1,5 +1,4 @@
 const STORAGE_KEY = "family-command-center-state";
-const PENDING_LOCAL_CHANGE_KEY = "family-command-center-pending-local-change";
 const CLOUD_FAMILY_ID_KEY = "family-command-center-cloud-family-id";
 const LEGACY_CLOUD_FAMILY_ID_KEYS = [
   "family-command-center-cloud-family-id-v4-8",
@@ -229,66 +228,253 @@ function loadState() {
 }
 
 
-function markPendingLocalChange(reason = "local change") {
-  const payload = {
-    reason,
-    at: new Date().toISOString(),
-    version: typeof APP_VERSION !== "undefined" ? APP_VERSION : ""
-  };
-  try {
-    localStorage.setItem(PENDING_LOCAL_CHANGE_KEY, JSON.stringify(payload));
-  } catch {}
-  if (typeof cloud !== "undefined" && cloud) {
-    cloud.pendingLocalChanges = true;
-    cloud.lastLocalChangeAt = payload.at;
+/* ===== V4.8.27 Manual Save Mode / No Auto Write Loop ===== */
+const MANUAL_SAVE_MODE = true;
+const MANUAL_PENDING_KEY = "family-command-center-manual-pending-local-change";
+
+function setManualSaveStatus(message, level = "warn") {
+  const el = document.getElementById("manualSaveStatus");
+  if (el) {
+    el.textContent = message;
+    el.className = `manual-save-status ${level === "good" ? "good" : level === "bad" ? "bad" : ""}`;
+  }
+  if (typeof setCloudStatus === "function") {
+    setCloudStatus(message, level);
   }
 }
 
-function clearPendingLocalChange() {
+function markManualPending(reason = "local change") {
   try {
-    localStorage.removeItem(PENDING_LOCAL_CHANGE_KEY);
+    localStorage.setItem(MANUAL_PENDING_KEY, JSON.stringify({
+      reason,
+      at: new Date().toISOString(),
+      version: typeof APP_VERSION !== "undefined" ? APP_VERSION : "4.8.27"
+    }));
   } catch {}
-  if (typeof cloud !== "undefined" && cloud) {
-    cloud.pendingLocalChanges = false;
-  }
+  renderManualSaveStatus();
 }
 
-function getPendingLocalChange() {
+function clearManualPending() {
   try {
-    const raw = localStorage.getItem(PENDING_LOCAL_CHANGE_KEY);
+    localStorage.removeItem(MANUAL_PENDING_KEY);
+  } catch {}
+  renderManualSaveStatus();
+}
+
+function getManualPending() {
+  try {
+    const raw = localStorage.getItem(MANUAL_PENDING_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function hasRecentPendingLocalChange(maxMinutes = 30) {
-  const pending = getPendingLocalChange();
-  if (!pending?.at) return false;
-
-  const ageMs = Date.now() - new Date(pending.at).getTime();
-  return Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= maxMinutes * 60 * 1000;
+function renderManualSaveStatus() {
+  const pending = getManualPending();
+  if (pending?.at) {
+    setManualSaveStatus(`Manual save mode active. Local changes are pending since ${new Date(pending.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}. Click Save local changes to cloud when ready.`, "warn");
+  } else {
+    setManualSaveStatus("Manual save mode active. No pending local change flag. No automatic cloud writes will run.", "good");
+  }
 }
 
-function protectLocalPendingFromRemote(sourceLabel = "cloud snapshot") {
-  if (!hasRecentPendingLocalChange()) return false;
-
-  if (typeof setCloudStatus === "function") {
-    setCloudStatus(`Local edits are waiting to save. Skipping older ${sourceLabel} so your changes are not lost.`, "warn");
-  }
-
-  if (typeof scheduleCloudSave === "function") {
-    setTimeout(scheduleCloudSave, 800);
-  }
-
-  return true;
+function getProjectIdForManualRestSave() {
+  return window.FAMILY_FIREBASE_CONFIG?.projectId
+    || window.firebaseConfig?.projectId
+    || window.FIREBASE_CONFIG?.projectId
+    || "";
 }
+
+function manualRestValue(value) {
+  if (value === null || typeof value === "undefined") return { nullValue: null };
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    if (Number.isInteger(value)) return { integerValue: String(value) };
+    return { doubleValue: value };
+  }
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map(item => manualRestValue(item)) } };
+  }
+  if (typeof value === "object") {
+    const fields = {};
+    Object.entries(value).forEach(([key, val]) => {
+      if (typeof val !== "undefined") fields[key] = manualRestValue(val);
+    });
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(value) };
+}
+
+function manualRestFields(object) {
+  const fields = {};
+  Object.entries(object || {}).forEach(([key, value]) => {
+    if (typeof value !== "undefined") fields[key] = manualRestValue(value);
+  });
+  return fields;
+}
+
+function manualEncodeDocPath(path) {
+  return String(path || "")
+    .split("/")
+    .filter(Boolean)
+    .map(part => encodeURIComponent(part))
+    .join("/");
+}
+
+async function manualRestPatch(docPath, fieldsObject, timeoutMs = 30000) {
+  if (!cloud.user) throw new Error("Not signed in.");
+
+  const projectId = getProjectIdForManualRestSave();
+  if (!projectId) throw new Error("Missing Firebase projectId.");
+
+  const token = await cloud.user.getIdToken(true);
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${manualEncodeDocPath(docPath)}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ fields: manualRestFields(fieldsObject) }),
+      signal: controller.signal
+    });
+
+    const text = await response.text();
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
+
+    if (!response.ok) {
+      const message = payload?.error?.message || response.statusText || text || "Unknown REST save error";
+      throw new Error(`Manual cloud save failed ${response.status}: ${message}`);
+    }
+
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function manualStateSummary() {
+  try {
+    return {
+      tasks: state.tasks?.length || 0,
+      events: state.events?.length || 0,
+      payments: state.payments?.length || 0,
+      shopping: state.shopping?.length || 0,
+      schoolItems: state.schoolItems?.length || 0,
+      chores: state.chores?.length || 0,
+      bytes: new Blob([JSON.stringify(state)]).size
+    };
+  } catch {
+    return { bytes: 0 };
+  }
+}
+
+async function manualSaveLocalChangesToCloud() {
+  try {
+    await ensureFirebase();
+
+    if (!cloud.user) {
+      throw new Error("Sign in first.");
+    }
+
+    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+    if (!familyId) {
+      throw new Error("Missing Family ID.");
+    }
+
+    setManualSaveStatus("Saving local changes to cloud manually. Please wait...", "warn");
+
+    await manualRestPatch(
+      `families/${familyId}/state/main`,
+      {
+        data: state,
+        updatedBy: cloud.user.uid,
+        updatedByEmail: cloud.user.email || "",
+        clientUpdatedAt: new Date().toISOString(),
+        appVersion: typeof APP_VERSION !== "undefined" ? APP_VERSION : "4.8.27",
+        writeMethod: "manual-save-mode",
+        clientSummary: manualStateSummary()
+      },
+      30000
+    );
+
+    clearManualPending();
+    setManualSaveStatus(`Manual cloud save completed for ${cloud.user.email || "signed-in user"}.`, "good");
+    if (typeof addDiagnosticInfo === "function") {
+      addDiagnosticInfo(
+        "Manual cloud save",
+        "Manual save succeeded",
+        "Local state was saved to Firestore with manual-save-mode.",
+        "Other devices should use Pull latest from cloud before editing.",
+        "good",
+        `familyId=${familyId}`
+      );
+    }
+  } catch (error) {
+    markManualPending("manual cloud save failed");
+    setManualSaveStatus(`Manual cloud save failed: ${error.message}`, "bad");
+    if (typeof addDiagnostic === "function") addDiagnostic("Manual cloud save", error, "bad");
+  }
+}
+
+async function pullLatestManualFromCloud() {
+  try {
+    await ensureFirebase();
+
+    const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
+    if (!cloud.user || !familyId) throw new Error("Sign in and connect to family space first.");
+
+    if (getManualPending()) {
+      const ok = confirm("You have local pending changes. Pulling latest from cloud may overwrite them. Continue?");
+      if (!ok) return;
+    }
+
+    const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+    const snap = await cloud.fb.getDoc(stateRef);
+
+    if (!snap.exists() || !snap.data()?.data) throw new Error("Cloud state/main is missing.");
+
+    cloud.applyingRemote = true;
+    state = normalizeState(snap.data().data);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    cloud.applyingRemote = false;
+    cloud.ready = true;
+
+    clearManualPending();
+    setManualSaveStatus("Pulled latest cloud data. Local pending flag cleared.", "good");
+    render();
+  } catch (error) {
+    setManualSaveStatus(`Pull latest failed: ${error.message}`, "bad");
+    if (typeof addDiagnostic === "function") addDiagnostic("Manual pull latest", error, "bad");
+  }
+}
+
+function clearPendingManualFlag() {
+  clearManualPending();
+  setManualSaveStatus("Pending local flag cleared. This does not delete app data.", "good");
+}
+
+function wireManualSaveControls() {
+  document.getElementById("manualSaveToCloudBtn")?.addEventListener("click", manualSaveLocalChangesToCloud);
+  document.getElementById("pullLatestManualBtn")?.addEventListener("click", pullLatestManualFromCloud);
+  document.getElementById("clearPendingManualBtn")?.addEventListener("click", clearPendingManualFlag);
+  renderManualSaveStatus();
+}
+/* ===== End V4.8.27 Manual Save Mode ===== */
 
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  markPendingLocalChange("saveState");
-  if (typeof scheduleCloudSave === "function") scheduleCloudSave();
+  markManualPending("local change saved locally");
+  // Manual save mode: never auto-write to Firestore from saveState().
 }
 
 
@@ -449,6 +635,7 @@ function inferQuickType(text, requestedType) {
 }
 
 function render() {
+  if (typeof renderManualSaveStatus === "function") setTimeout(renderManualSaveStatus, 0);
   document.getElementById("familyTitle").textContent = `${state.settings.familyName} Hub`;
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
@@ -1227,7 +1414,6 @@ function renderTaskItem(task) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleTask" data-id="${task.id}">${task.done ? "Reopen" : "Done"}</button>
-        <button class="icon-btn" data-action="editTask" data-id="${task.id}">Edit</button>
         <button class="icon-btn" data-action="deleteTask" data-id="${task.id}">Delete</button>
       </div>
     </div>
@@ -1248,7 +1434,6 @@ function renderEventItem(event) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="taskFromEvent" data-id="${event.id}">Prep task</button>
-        <button class="icon-btn" data-action="editEvent" data-id="${event.id}">Edit</button>
         <button class="icon-btn" data-action="deleteEvent" data-id="${event.id}">Delete</button>
       </div>
     </div>
@@ -1276,7 +1461,6 @@ function renderSchoolItem(item) {
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleSchool" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
         <button class="icon-btn" data-action="schoolToPrep" data-id="${item.id}">Prep</button>
-        <button class="icon-btn" data-action="editSchool" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deleteSchool" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1300,7 +1484,6 @@ function renderPaymentItem(payment) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="togglePayment" data-id="${payment.id}">${paid ? "Reopen" : "Paid"}</button>
-        <button class="icon-btn" data-action="editPayment" data-id="${payment.id}">Edit</button>
         <button class="icon-btn" data-action="deletePayment" data-id="${payment.id}">Delete</button>
       </div>
     </div>
@@ -1319,7 +1502,6 @@ function renderShoppingItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleShopping" data-id="${item.id}">${item.done ? "Reopen" : "Bought"}</button>
-        <button class="icon-btn" data-action="editShopping" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deleteShopping" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1358,7 +1540,6 @@ function renderPrepItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="togglePrep" data-id="${item.id}">${item.done ? "Reopen" : "Done"}</button>
-        <button class="icon-btn" data-action="editPrep" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deletePrep" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1381,7 +1562,6 @@ function renderDecisionItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleDecision" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
-        <button class="icon-btn" data-action="editDecision" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deleteDecision" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1404,7 +1584,6 @@ function renderAdminItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleAdmin" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
-        <button class="icon-btn" data-action="editAdmin" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deleteAdmin" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1493,169 +1672,8 @@ document.addEventListener("click", event => {
   handleAction(actionButton.dataset);
 });
 
-
-// V4.8.22: lightweight edit support for items created manually or from Quick Capture.
-// Uses browser prompts to keep the update small and stable.
-function editPrompt(label, currentValue = "") {
-  const result = prompt(label, currentValue ?? "");
-  if (result === null) return currentValue ?? "";
-  return result.trim();
-}
-
-function editPromptNumber(label, currentValue = 0) {
-  const current = currentValue === undefined || currentValue === null ? "" : String(currentValue);
-  const result = prompt(label, current);
-  if (result === null) return Number(currentValue || 0);
-  const cleaned = result.trim().replace("$", "").replace(",", ".");
-  const value = Number(cleaned);
-  return Number.isFinite(value) ? value : Number(currentValue || 0);
-}
-
-function editPromptDate(label, currentValue = "") {
-  const result = prompt(`${label} (YYYY-MM-DD, or blank)`, currentValue || "");
-  if (result === null) return currentValue || "";
-  const cleaned = result.trim();
-  if (!cleaned) return "";
-  const parsed = typeof smartExtractDate === "function" ? smartExtractDate(cleaned) : "";
-  return parsed || cleaned;
-}
-
-function editPromptChoice(label, currentValue = "", choices = []) {
-  const result = prompt(`${label}${choices.length ? ` (${choices.join(" / ")})` : ""}`, currentValue || "");
-  if (result === null) return currentValue || "";
-  const cleaned = result.trim();
-  if (!choices.length) return cleaned;
-  const match = choices.find(choice => choice.toLowerCase() === cleaned.toLowerCase());
-  return match || cleaned || currentValue || "";
-}
-
-function updateLinkedPaymentCalendarEvents(oldName, oldDue, payment) {
-  const newTitle = `Payment due: ${payment.name}${payment.amount ? ` $${payment.amount}` : ""}`;
-  const candidates = state.events.filter(event => {
-    const title = String(event.title || "");
-    const notes = String(event.notes || "");
-    return title.includes(oldName)
-      || notes.includes(oldName)
-      || (title.startsWith("Payment due:") && oldDue && event.date === oldDue);
-  });
-
-  if (!candidates.length) return;
-
-  const shouldUpdate = confirm(`Update ${candidates.length} linked calendar reminder(s) for this payment too?`);
-  if (!shouldUpdate) return;
-
-  candidates.forEach(event => {
-    event.title = newTitle;
-    event.date = payment.due || event.date;
-    event.person = payment.owner || event.person || "Both";
-    event.notes = `${event.notes || ""}\nUpdated from payment edit on ${new Date().toLocaleString()}`.trim();
-  });
-}
-
-function editTaskItem(id) {
-  const item = state.tasks.find(t => t.id === id);
-  if (!item) return;
-  item.title = editPrompt("Task title", item.title);
-  item.owner = editPrompt("Owner / child", item.owner || "Both");
-  item.due = editPromptDate("Due date", item.due || "");
-  item.category = editPrompt("Category", item.category || "Other");
-  item.priority = editPromptChoice("Priority", item.priority || "Normal", ["Low", "Normal", "High"]);
-}
-
-function editEventItem(id) {
-  const item = state.events.find(e => e.id === id);
-  if (!item) return;
-  item.title = editPrompt("Calendar title", item.title);
-  item.person = editPrompt("Person / child", item.person || "All family");
-  item.date = editPromptDate("Date", item.date || todayIso());
-  item.time = editPrompt("Time (HH:MM or blank)", item.time || "");
-  item.location = editPrompt("Location", item.location || "");
-  item.notes = editPrompt("Notes", item.notes || "");
-}
-
-function editPaymentItem(id) {
-  const item = state.payments.find(p => p.id === id);
-  if (!item) return;
-
-  const oldName = item.name;
-  const oldDue = item.due;
-
-  item.name = editPrompt("Payment name", item.name);
-  item.amount = editPromptNumber("Amount", item.amount || 0);
-  item.due = editPromptDate("Due date", item.due || todayIso());
-  item.category = editPrompt("Category", item.category || "Other");
-  item.owner = editPrompt("Owner / child", item.owner || "Both");
-  item.frequency = editPromptChoice("Frequency", item.frequency || "One-time", ["One-time", "Weekly", "Monthly", "Yearly"]);
-  item.method = editPrompt("Payment method", item.method || "Credit card");
-  item.status = editPromptChoice("Status", item.status || "Upcoming", ["Upcoming", "Paid", "Overdue"]);
-  item.paidDate = item.status === "Paid" ? editPromptDate("Paid date", item.paidDate || todayIso()) : "";
-  item.notes = editPrompt("Notes", item.notes || "");
-
-  updateLinkedPaymentCalendarEvents(oldName, oldDue, item);
-}
-
-function editSchoolItem(id) {
-  const item = state.schoolItems.find(s => s.id === id);
-  if (!item) return;
-  item.title = editPrompt("Homework / exam title", item.title);
-  item.child = editPrompt("Child", item.child || "");
-  item.type = editPromptChoice("Type", item.type || "Homework", ["Homework", "Exam", "Test", "Quiz", "Project", "Reading"]);
-  item.subject = editPrompt("Subject", item.subject || "");
-  item.due = editPromptDate("Due date", item.due || todayIso());
-  item.priority = editPromptChoice("Priority", item.priority || "Normal", ["Low", "Normal", "High"]);
-  item.status = editPromptChoice("Status", item.status || "Open", ["Open", "Done"]);
-  item.notes = editPrompt("Notes", item.notes || "");
-}
-
-function editShoppingItem(id) {
-  const item = state.shopping.find(s => s.id === id);
-  if (!item) return;
-  item.name = editPrompt("Shopping item", item.name);
-  item.store = editPrompt("Store / category", item.store || "Grocery");
-}
-
-function editPrepItem(id) {
-  const item = state.prepItems.find(p => p.id === id);
-  if (!item) return;
-  item.text = editPrompt("Prep item", item.text);
-  item.owner = editPrompt("Owner / child", item.owner || "Both");
-  item.date = editPromptDate("Date", item.date || "");
-}
-
-function editDecisionItem(id) {
-  const item = state.decisions.find(d => d.id === id);
-  if (!item) return;
-  item.title = editPrompt("Decision title", item.title);
-  item.owner = editPrompt("Owner", item.owner || "Both");
-  item.due = editPromptDate("Due date", item.due || "");
-  item.options = editPrompt("Options / notes", item.options || "");
-  item.status = editPromptChoice("Status", item.status || "Open", ["Open", "Done"]);
-}
-
-function editAdminItem(id) {
-  const item = state.adminItems.find(a => a.id === id);
-  if (!item) return;
-  item.title = editPrompt("Admin item title", item.title);
-  item.category = editPrompt("Category", item.category || "School");
-  item.owner = editPrompt("Owner / child", item.owner || "Both");
-  item.due = editPromptDate("Due date", item.due || "");
-  item.status = editPromptChoice("Status", item.status || "Open", ["Open", "Done"]);
-  item.notes = editPrompt("Notes", item.notes || "");
-}
-
-
 function handleAction(dataset) {
   const { action, id, routine } = dataset;
-
-  if (action === "editTask") editTaskItem(id);
-  if (action === "editEvent") editEventItem(id);
-  if (action === "editPayment") editPaymentItem(id);
-  if (action === "editSchool") editSchoolItem(id);
-  if (action === "editShopping") editShoppingItem(id);
-  if (action === "editPrep") editPrepItem(id);
-  if (action === "editDecision") editDecisionItem(id);
-  if (action === "editAdmin") editAdminItem(id);
-
 
   if (action === "toggleTask") {
     const task = state.tasks.find(t => t.id === id);
@@ -1765,342 +1783,14 @@ function convertInbox(id, target) {
   state.inbox = state.inbox.filter(i => i.id !== id);
 }
 
-
-function smartMonthNumber(name) {
-  const key = String(name || "").toLowerCase().slice(0, 3);
-  const map = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
-  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : null;
-}
-
-function smartIsoFromLocalParts(year, month, day) {
-  const d = new Date(year, month, day);
-  return isoFromDate(d);
-}
-
-function smartExtractDate(text) {
-  const original = extractDate(text);
-  if (original) return original;
-
-  const now = new Date();
-  const clean = String(text || "").replace(/,/g, " ");
-
-  const iso = clean.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
-  if (iso) return smartIsoFromLocalParts(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
-
-  const dayMonth = clean.match(/\b(\d{1,2})\s*(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i);
-  if (dayMonth) {
-    const day = Number(dayMonth[1]);
-    const month = smartMonthNumber(dayMonth[2]);
-    if (month !== null) {
-      let year = now.getFullYear();
-      let result = smartIsoFromLocalParts(year, month, day);
-      if (result < todayIso()) result = smartIsoFromLocalParts(year + 1, month, day);
-      return result;
-    }
-  }
-
-  const monthDay = clean.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s*(\d{1,2})\b/i);
-  if (monthDay) {
-    const month = smartMonthNumber(monthDay[1]);
-    const day = Number(monthDay[2]);
-    if (month !== null) {
-      let year = now.getFullYear();
-      let result = smartIsoFromLocalParts(year, month, day);
-      if (result < todayIso()) result = smartIsoFromLocalParts(year + 1, month, day);
-      return result;
-    }
-  }
-
-  return "";
-}
-
-function smartExtractAmount(text) {
-  const value = String(text || "");
-  const patterns = [
-    /\$\s*(\d+(?:[.,]\d{1,2})?)/,
-    /(\d+(?:[.,]\d{1,2})?)\s*(?:\$|usd|dollars)/i,
-    /(?:amount|cost|fee|price)\s*[:=]?\s*\$?\s*(\d+(?:[.,]\d{1,2})?)/i
-  ];
-  for (const pattern of patterns) {
-    const match = value.match(pattern);
-    if (match) return Number(String(match[1]).replace(",", "."));
-  }
-  return 0;
-}
-
-function smartDetectChild(text) {
-  const lower = String(text || "").toLowerCase();
-  const children = state.settings.children || [];
-  const byName = children.find(name => lower.includes(String(name).toLowerCase()));
-  if (byName) return byName;
-
-  const forMatch = String(text || "").match(/\bfor\s+([A-Za-z][A-Za-z'-]*)\b/i);
-  if (forMatch) {
-    const candidate = forMatch[1];
-    return children.find(name => String(name).toLowerCase() === candidate.toLowerCase()) || candidate;
-  }
-
-  return "All family";
-}
-
-function smartCleanDatePhrases(title) {
-  return title
-    .replace(/\bby\s+(today|tomorrow|next\s+\w+|\w+\s*\d{1,2}|\d{1,2}\s*\w+|\d{1,2}[\/.]\d{1,2}(?:[\/.]\d{2,4})?)\b/gi, "")
-    .replace(/\bdue\s+(today|tomorrow|next\s+\w+|\w+\s*\d{1,2}|\d{1,2}\s*\w+|\d{1,2}[\/.]\d{1,2}(?:[\/.]\d{2,4})?)\b/gi, "");
-}
-
-function smartPaymentTitle(text, child) {
-  let title = String(text || "")
-    .replace(/^\s*(pay|payment|paid)\s+(for\s+)?/i, "")
-    .replace(/\$\s*\d+(?:[.,]\d{1,2})?/g, "")
-    .replace(/\d+(?:[.,]\d{1,2})?\s*(\$|usd|dollars)/gi, "");
-
-  title = smartCleanDatePhrases(title);
-
-  if (child && child !== "All family") {
-    const escaped = String(child).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    title = title.replace(new RegExp(`\\bfor\\s+${escaped}\\b`, "i"), "");
-  }
-
-  title = title.replace(/\s+/g, " ").replace(/^[:\-–—\s]+|[:\-–—\s]+$/g, "").trim();
-  return title || "Payment";
-}
-
-function smartIsPayment(text, amount) {
-  const lower = String(text || "").toLowerCase();
-  return amount > 0 || /\b(pay|payment|paid|fee|bill|invoice|tuition|subscription|lesson cost)\b/.test(lower);
-}
-
-function smartIsExamOrHomework(text) {
-  const lower = String(text || "").toLowerCase();
-  if (/\b(exam|test|quiz|homework|assignment|project due|reading)\b/.test(lower)) return true;
-  return false;
-}
-
-function smartIsEvent(text) {
-  const lower = String(text || "").toLowerCase();
-  return /\b(lesson|practice|appointment|meeting|game|class|dentist|doctor|activity)\b/.test(lower) || Boolean(extractTime(text));
-}
-
-
-function smartQuickBucketCandidates(text) {
-  const amount = smartExtractAmount(text);
-  const lower = String(text || "").toLowerCase();
-  const candidates = [];
-
-  if (smartIsPayment(text, amount)) {
-    candidates.push({
-      key: "payment",
-      label: "Payment + calendar due-date reminder",
-      reason: amount ? `found amount $${amount}` : "found payment words"
-    });
-  }
-
-  if (smartIsExamOrHomework(text)) {
-    candidates.push({
-      key: "schoolwork",
-      label: "Homework / exam",
-      reason: "found homework/exam/school words"
-    });
-  }
-
-  if (smartIsEvent(text)) {
-    candidates.push({
-      key: "event",
-      label: "Calendar event",
-      reason: "found event/lesson/appointment/time words"
-    });
-  }
-
-  if (/\b(buy|shopping|grocery|groceries|need to buy)\b/.test(lower)) {
-    candidates.push({
-      key: "shopping",
-      label: "Shopping",
-      reason: "found shopping words"
-    });
-  }
-
-  if (/\b(remind|remember|prepare|pack)\b/.test(lower)) {
-    candidates.push({
-      key: "prep",
-      label: "Prep / reminder task",
-      reason: "found reminder/prep words"
-    });
-  }
-
-  // Remove duplicates while preserving order.
-  return candidates.filter((item, index, all) => all.findIndex(x => x.key === item.key) === index);
-}
-
-function smartPromptBucketChoice(text, requestedType) {
-  const requested = requestedType || "auto";
-  const candidates = smartQuickBucketCandidates(text);
-
-  if (!candidates.length) return requested;
-
-  // If the dropdown explicitly says something other than auto but text strongly looks like another bucket,
-  // ask before forcing the selected dropdown bucket.
-  const requestedCandidate = candidates.find(c => c.key === requested);
-  const requestedLooksSafe = requested === "auto" || Boolean(requestedCandidate);
-
-  if (candidates.length === 1 && requestedLooksSafe) {
-    return requested === "auto" ? candidates[0].key : requested;
-  }
-
-  const lines = [
-    "This quick capture can fit more than one bucket.",
-    "",
-    `Text: ${text}`,
-    "",
-    "Choose one option by number:",
-    ""
-  ];
-
-  candidates.forEach((candidate, index) => {
-    lines.push(`${index + 1}. ${candidate.label} (${candidate.reason})`);
-  });
-
-  if (requested !== "auto" && !requestedCandidate) {
-    lines.push(`${candidates.length + 1}. Use selected dropdown bucket: ${requested}`);
-  }
-
-  lines.push("");
-  lines.push("Recommended: choose Payment when the sentence includes an amount or the word pay.");
-  lines.push("Cancel = do nothing.");
-
-  const answer = prompt(lines.join("\n"), candidates[0]?.key === "payment" ? "1" : "");
-  if (answer === null) return "__cancel__";
-
-  const trimmed = String(answer).trim().toLowerCase();
-  const number = Number(trimmed);
-
-  if (Number.isInteger(number) && number >= 1 && number <= candidates.length) {
-    return candidates[number - 1].key;
-  }
-
-  if (Number.isInteger(number) && requested !== "auto" && number === candidates.length + 1) {
-    return requested;
-  }
-
-  const byKey = candidates.find(c => c.key === trimmed);
-  if (byKey) return byKey.key;
-
-  const byLabel = candidates.find(c => c.label.toLowerCase().includes(trimmed));
-  if (byLabel) return byLabel.key;
-
-  return candidates[0]?.key || requested;
-}
-
-
-
-function smartQuickCaptureCreate(text, requestedType) {
-  const amount = smartExtractAmount(text);
-  const date = smartExtractDate(text);
-  const child = smartDetectChild(text);
-  const lower = String(text || "").toLowerCase();
-  const forced = requestedType && requestedType !== "auto";
-
-  if (requestedType === "payment" || (!forced && smartIsPayment(text, amount))) {
-    const paid = lower.startsWith("paid ");
-    const name = smartPaymentTitle(text, child);
-    state.payments.push({
-      id: uid(),
-      name,
-      amount,
-      due: date || todayIso(),
-      category: child && child !== "All family" ? "Kids" : "Other",
-      owner: "Both",
-      frequency: "One-time",
-      method: "Credit card",
-      status: paid ? "Paid" : "Upcoming",
-      paidDate: paid ? todayIso() : "",
-      notes: `Added from smart quick capture. Original: ${text}${child && child !== "All family" ? ` Child: ${child}` : ""}`,
-      createdAt: Date.now()
-    });
-
-    if (!paid) {
-      state.events.push({
-        id: uid(),
-        title: `Payment due: ${name}${amount ? ` $${amount}` : ""}`,
-        person: child || "All family",
-        date: date || todayIso(),
-        time: "",
-        location: "",
-        notes: `Created from payment quick capture: ${text}`,
-        createdAt: Date.now()
-      });
-    }
-
-    return true;
-  }
-
-  if (requestedType === "schoolwork" || (!forced && smartIsExamOrHomework(text))) {
-    const itemType = lower.includes("exam") ? "Exam" : lower.includes("test") ? "Test" : lower.includes("quiz") ? "Quiz" : lower.includes("project") ? "Project" : lower.includes("reading") ? "Reading" : "Homework";
-    state.schoolItems.push({
-      id: uid(),
-      title: text,
-      child,
-      type: itemType,
-      subject: "",
-      due: date || todayIso(),
-      priority: ["Exam", "Test", "Quiz"].includes(itemType) ? "High" : "Normal",
-      status: "Open",
-      notes: "Added from smart quick capture",
-      createdAt: Date.now()
-    });
-    state.events.push({
-      id: uid(),
-      title: `${itemType}: ${text}`,
-      person: child || "All family",
-      date: date || todayIso(),
-      time: "",
-      location: "",
-      notes: "Created from school quick capture",
-      createdAt: Date.now()
-    });
-    return true;
-  }
-
-  if (requestedType === "event" || (!forced && smartIsEvent(text))) {
-    state.events.push({
-      id: uid(),
-      title: smartCleanDatePhrases(text).replace(/\s+/g, " ").trim() || text,
-      person: child || "All family",
-      date: date || todayIso(),
-      time: extractTime(text),
-      location: "",
-      notes: "Added from smart quick capture",
-      createdAt: Date.now()
-    });
-    return true;
-  }
-
-  return false;
-}
-
-
 document.getElementById("quickForm").addEventListener("submit", event => {
   event.preventDefault();
   const text = document.getElementById("quickText").value.trim();
   const requested = document.getElementById("quickType").value;
   if (!text) return;
 
-  // V4.8.23: if the text can fit more than one bucket, ask the user before creating records.
-  const resolvedBucket = smartPromptBucketChoice(text, requested);
-  if (resolvedBucket === "__cancel__") return;
-
-  // V4.8.21+: smart multi-create for natural language quick capture.
-  // Example: "Pay for Hebrew lesson $260 by 15 May for Daniel"
-  // Creates a payment and a calendar due-date reminder when bucket = payment.
-  if (smartQuickCaptureCreate(text, resolvedBucket)) {
-    document.getElementById("quickText").value = "";
-    saveState();
-    render();
-    return;
-  }
-
-  const type = inferQuickType(text, resolvedBucket);
-  const date = smartExtractDate(text) || extractDate(text);
+  const type = inferQuickType(text, requested);
+  const date = extractDate(text);
 
   if (type === "shopping") {
     const cleaned = text.replace(/^(buy|shopping)\s*:?/i, "").trim();
@@ -2109,7 +1799,7 @@ document.getElementById("quickForm").addEventListener("submit", event => {
     });
   } else if (type === "schoolwork") {
     const lower = text.toLowerCase();
-    const child = state.settings.children.find(name => lower.includes(name.toLowerCase())) || smartDetectChild(text) || "All family";
+    const child = state.settings.children.find(name => lower.includes(name.toLowerCase())) || "All family";
     const itemType = lower.includes("exam") ? "Exam" : lower.includes("test") ? "Test" : lower.includes("quiz") ? "Quiz" : lower.includes("project") ? "Project" : lower.includes("reading") ? "Reading" : "Homework";
     state.schoolItems.push({
       id: uid(),
@@ -2125,26 +1815,20 @@ document.getElementById("quickForm").addEventListener("submit", event => {
     });
   } else if (type === "payment") {
     const paid = text.toLowerCase().startsWith("paid ");
-    const child = smartDetectChild(text);
-    const amount = smartExtractAmount(text) || extractAmount(text);
-    const name = smartPaymentTitle(text, child);
     state.payments.push({
       id: uid(),
-      name,
-      amount,
+      name: text.replace(/^(pay|paid)\s+/i, "").replace(/\$?\s?\d+(?:\.\d{1,2})?/, "").trim() || text,
+      amount: extractAmount(text),
       due: paid ? date || todayIso() : date || todayIso(),
-      category: child && child !== "All family" ? "Kids" : "Other",
+      category: "Other",
       owner: "Both",
       frequency: "One-time",
       method: "Credit card",
       status: paid ? "Paid" : "Upcoming",
       paidDate: paid ? todayIso() : "",
-      notes: `Added from quick capture${child && child !== "All family" ? `. Child: ${child}` : ""}`,
+      notes: "Added from quick capture",
       createdAt: Date.now()
     });
-    if (!paid) {
-      state.events.push({ id: uid(), title: `Payment due: ${name}${amount ? ` $${amount}` : ""}`, person: child || "All family", date: date || todayIso(), time: "", location: "", notes: "Created from payment quick capture", createdAt: Date.now() });
-    }
   } else if (type === "prep") {
     state.prepItems.push({ id: uid(), text, owner: "Both", date: date || addDays(todayIso(), 1), done: false, createdAt: Date.now() });
   } else if (type === "decision") {
@@ -2152,7 +1836,7 @@ document.getElementById("quickForm").addEventListener("submit", event => {
   } else if (type === "admin") {
     state.adminItems.push({ id: uid(), title: text, category: "Other", owner: "Both", due: date, notes: "Added from quick capture", status: "Open", createdAt: Date.now() });
   } else if (type === "event") {
-    state.events.push({ id: uid(), title: text, person: smartDetectChild(text) || "All family", date: date || todayIso(), time: extractTime(text), location: "", notes: "Added from quick capture", createdAt: Date.now() });
+    state.events.push({ id: uid(), title: text, person: "All family", date: date || todayIso(), time: extractTime(text), location: "", notes: "Added from quick capture", createdAt: Date.now() });
   } else if (type === "inbox") {
     state.inbox.push({ id: uid(), text, type: "Unsorted", createdAt: Date.now() });
   } else {
@@ -2870,27 +2554,12 @@ function renderFamilyMembers() {
 }
 
 async function updatePresence() {
-  if (!cloud.user || !cloud.familyId || !cloud.db || !cloud.fb) return;
-
-  try {
-    cloud.memberRef = cloud.fb.doc(cloud.db, "families", cloud.familyId, "members", cloud.user.uid);
-    await cloud.fb.setDoc(cloud.memberRef, {
-      email: cloud.user.email || "",
-      displayName: cloud.user.displayName || "",
-      photoURL: cloud.user.photoURL || "",
-      role: cloud.user.uid === cloud.familyDoc?.createdBy ? "owner" : "member",
-      online: true,
-      lastSeen: cloud.fb.serverTimestamp()
-    }, { merge: true });
-  } catch (error) {
-    cloud.lastError = error.message;
-  }
+  // V4.8.27 manual save mode: presence writes disabled to avoid background write loops.
+  return false;
 }
 
 function startPresenceHeartbeat() {
-  stopPresenceHeartbeat();
-  updatePresence();
-  cloud.heartbeatTimer = setInterval(updatePresence, 60 * 1000);
+  // V4.8.27 manual save mode: presence heartbeat disabled to avoid background write loops.
 }
 
 function stopPresenceHeartbeat() {
@@ -3027,44 +2696,15 @@ async function getUserCurrentFamilyId() {
 }
 
 async function saveUserCurrentFamily(familyId, role = "member") {
-  if (!cloud.user || !familyId || !cloud.db || !cloud.fb) return;
-
-  const profileRef = cloud.fb.doc(cloud.db, "users", cloud.user.uid);
-  await cloud.fb.setDoc(profileRef, {
-    email: cloud.user.email || "",
-    displayName: cloud.user.displayName || "",
-    photoURL: cloud.user.photoURL || "",
-    currentFamilyId: familyId,
-    lastFamilyId: familyId,
-    role,
-    updatedAt: cloud.fb.serverTimestamp()
-  }, { merge: true });
+  // V4.8.27 manual save mode: skip optional user profile family mapping write on login to avoid quota loops.
+  return false;
 }
 
 
 
-async function ensureOwnerMemberRecord(familyId, familyData) {
-  if (!cloud.user || !familyId || !familyData) return;
-
-  const isCreator = familyData.createdBy === cloud.user.uid;
-  if (!isCreator) return;
-
-  try {
-    const memberRef = cloud.fb.doc(cloud.db, "families", familyId, "members", cloud.user.uid);
-    await cloud.fb.setDoc(memberRef, {
-      email: cloud.user.email || "",
-      displayName: cloud.user.displayName || "",
-      photoURL: cloud.user.photoURL || "",
-      role: "owner",
-      repairedOwnerMember: true,
-      repairedAt: cloud.fb.serverTimestamp(),
-      online: true,
-      lastSeen: cloud.fb.serverTimestamp()
-    }, { merge: true });
-  } catch (error) {
-    cloud.lastError = error.message;
-    // Do not throw here. Updated rules may still allow owner access to state.
-  }
+async function ensureOwnerMemberRecord(familyId, familyDoc) {
+  // V4.8.27 manual save mode: skip optional owner/member repair write on login to avoid quota loops.
+  return false;
 }
 
 function withTimeout(promise, ms, message) {
@@ -3269,7 +2909,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.26";
+const APP_VERSION = "4.8.27";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3407,7 +3047,7 @@ function getDiagnosticReportText() {
     `Family ID: ${cloud?.familyId || getStoredFamilyId?.() || "none"}`,
     `Cloud ready: ${Boolean(cloud?.ready)}`,
     `Last error: ${cloud?.lastError || "none"}`,
-    `Pending local change: ${JSON.stringify(getPendingLocalChange?.() || null)}`,
+    `Manual pending local change: ${JSON.stringify(getManualPending?.() || null)}`,
     `User agent: ${navigator.userAgent}`,
     ``,
     `Diagnostics:`
@@ -3513,11 +3153,6 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
 
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
-    if (protectLocalPendingFromRemote("cloud state update")) {
-      cloud.ready = true;
-      renderCloudPanel();
-      return;
-    }
     cloud.applyingRemote = true;
     state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -3530,12 +3165,6 @@ async function activateCloudFromReadableData(familyId = cloud.familyId || getSto
   });
 
   if (typeof startPresenceHeartbeat === "function") startPresenceHeartbeat();
-
-  // Push pending local changes after activation so refresh does not lose edits.
-  if (hasRecentPendingLocalChange()) {
-    setTimeout(scheduleCloudSave, 1000);
-  }
-
   render();
 
   addDiagnosticInfo(
@@ -3843,12 +3472,6 @@ async function connectFamily(familyId) {
   cloud.unsubscribeState = cloud.fb.onSnapshot(stateRef, snap => {
     if (!snap.exists() || !snap.data()?.data) return;
 
-    if (protectLocalPendingFromRemote("cloud state update")) {
-      cloud.ready = true;
-      renderCloudPanel();
-      return;
-    }
-
     cloud.applyingRemote = true;
     state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -3862,167 +3485,19 @@ async function connectFamily(familyId) {
   });
 
   startPresenceHeartbeat();
-
-  // Push pending local changes after reconnect so refresh does not lose edits.
-  if (hasRecentPendingLocalChange()) {
-    setTimeout(scheduleCloudSave, 1000);
-  }
 }
 
 function scheduleCloudSave() {
-  if (!cloud || !cloud.ready || !cloud.stateRef || !cloud.user || cloud.applyingRemote) return;
-  clearTimeout(cloud.saveTimer);
-  cloud.saveTimer = setTimeout(saveCloudNow, 500);
+  // V4.8.27 manual save mode: automatic cloud saves are disabled to prevent write loops.
+  markManualPending("auto-save suppressed by manual save mode");
+  renderManualSaveStatus();
 }
-
-
-function getFirestoreProjectIdForRestSave() {
-  return window.FAMILY_FIREBASE_CONFIG?.projectId
-    || window.firebaseConfig?.projectId
-    || window.FIREBASE_CONFIG?.projectId
-    || "";
-}
-
-function firestoreRestEncodeValue(value) {
-  if (value === null || typeof value === "undefined") return { nullValue: null };
-
-  if (typeof value === "string") return { stringValue: value };
-  if (typeof value === "boolean") return { booleanValue: value };
-
-  if (typeof value === "number") {
-    if (Number.isInteger(value)) return { integerValue: String(value) };
-    return { doubleValue: value };
-  }
-
-  if (Array.isArray(value)) {
-    return {
-      arrayValue: {
-        values: value.map(item => firestoreRestEncodeValue(item))
-      }
-    };
-  }
-
-  if (typeof value === "object") {
-    const fields = {};
-    Object.entries(value).forEach(([key, val]) => {
-      if (typeof val !== "undefined") {
-        fields[key] = firestoreRestEncodeValue(val);
-      }
-    });
-    return { mapValue: { fields } };
-  }
-
-  return { stringValue: String(value) };
-}
-
-function firestoreRestEncodeFields(object) {
-  const fields = {};
-  Object.entries(object || {}).forEach(([key, value]) => {
-    if (typeof value !== "undefined") fields[key] = firestoreRestEncodeValue(value);
-  });
-  return fields;
-}
-
-function encodeFirestoreDocPath(path) {
-  return String(path || "")
-    .split("/")
-    .filter(Boolean)
-    .map(part => encodeURIComponent(part))
-    .join("/");
-}
-
-async function firestoreRestPatchStable(docPath, fieldsObject, timeoutMs = 30000) {
-  if (!cloud.user) throw new Error("Not signed in.");
-
-  const projectId = getFirestoreProjectIdForRestSave();
-  if (!projectId) throw new Error("Missing Firebase projectId for REST save.");
-
-  const token = await cloud.user.getIdToken(true);
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${encodeFirestoreDocPath(docPath)}`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ fields: firestoreRestEncodeFields(fieldsObject) }),
-      signal: controller.signal
-    });
-
-    const text = await response.text();
-    let payload = null;
-    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-
-    if (!response.ok) {
-      const message = payload?.error?.message || response.statusText || text || "Unknown REST save error";
-      throw new Error(`REST save failed ${response.status}: ${message}`);
-    }
-
-    return payload;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function stateSaveSummary() {
-  try {
-    return {
-      tasks: state.tasks?.length || 0,
-      events: state.events?.length || 0,
-      payments: state.payments?.length || 0,
-      shopping: state.shopping?.length || 0,
-      schoolItems: state.schoolItems?.length || 0,
-      chores: state.chores?.length || 0,
-      bytes: new Blob([JSON.stringify(state)]).size
-    };
-  } catch {
-    return { bytes: 0 };
-  }
-}
-
 
 async function saveCloudNow() {
-  if (!cloud.ready || !cloud.user || cloud.applyingRemote) return;
-
-  const familyId = String(cloud.familyId || getStoredFamilyId() || "").trim().toUpperCase();
-  if (!familyId) {
-    markPendingLocalChange("missing family id during cloud save");
-    setCloudStatus("Could not save to cloud: missing Family ID.", "bad");
-    return;
-  }
-
-  try {
-    setCloudStatus("Saving local changes to Firestore...", "warn");
-
-    const summary = stateSaveSummary();
-    await firestoreRestPatchStable(
-      `families/${familyId}/state/main`,
-      {
-        data: state,
-        updatedBy: cloud.user.uid,
-        updatedByEmail: cloud.user.email || "",
-        clientUpdatedAt: new Date().toISOString(),
-        appVersion: typeof APP_VERSION !== "undefined" ? APP_VERSION : "",
-        writeMethod: "stable-rest-save",
-        clientSummary: summary
-      },
-      30000
-    );
-
-    clearPendingLocalChange();
-    setCloudStatus(`Cloud save completed for ${cloud.user.email || "signed-in user"}.`, "good");
-  } catch (error) {
-    cloud.lastError = error.message;
-    markPendingLocalChange("cloud REST save failed");
-    setCloudStatus(`Could not save to cloud: ${error.message}`, "bad");
-  }
+  // V4.8.27 manual save mode: no automatic Firestore writes.
+  markManualPending("automatic save suppressed by manual save mode");
+  renderManualSaveStatus();
 }
-
 
 
 
@@ -4302,6 +3777,7 @@ window.addEventListener("load", async () => {
   wireCloudControls();
   wireCloudRecoveryControls();
   wireDiagnosticsControls();
+wireManualSaveControls();
   wireGoogleCalendarControls();
   wireRoleSetupControls();
   renderCloudPanel();
@@ -4403,198 +3879,25 @@ function v48Render(){v48EnsureArrays(); ["choreChild","equipmentChild"].forEach(
 const __v48OriginalRender = render;
 render = function(){ __v48OriginalRender(); v48Render(); };
 
-
-/* ===== V4.8.24 Active Quick Capture Bucket Choice Fix ===== */
-function v4824Amount(text) {
-  return typeof smartExtractAmount === "function" ? smartExtractAmount(text) : extractAmount(text);
-}
-
-function v4824Date(text) {
-  return (typeof smartExtractDate === "function" ? smartExtractDate(text) : "") || extractDate(text);
-}
-
-function v4824Candidates(text, requested = "auto") {
-  const lower = String(text || "").toLowerCase();
-  const amount = v4824Amount(text);
-  const candidates = [];
-
-  const hasPayment = amount > 0 || /\b(pay|payment|paid|fee|bill|invoice|tuition|subscription|cost)\b/.test(lower);
-  const hasEvent = /\b(lesson|practice|appointment|meeting|game|class|dentist|doctor|activity)\b/.test(lower) || Boolean(extractTime(text));
-  const hasSchool = /\b(exam|test|quiz|homework|assignment|project due|reading)\b/.test(lower);
-  const hasShopping = /\b(buy|shopping|grocery|groceries|need to buy)\b/.test(lower);
-  const hasPrep = /\b(remind|remember|prepare|pack)\b/.test(lower);
-
-  if (hasPayment) candidates.push({ key: "payment", label: "Payment + calendar due-date reminder", reason: amount ? `amount $${amount}` : "payment words" });
-  if (hasEvent) candidates.push({ key: "event", label: "Calendar event", reason: "lesson/event/time words" });
-  if (hasSchool) candidates.push({ key: "schoolwork", label: "Homework / exam", reason: "school words" });
-  if (hasShopping) candidates.push({ key: "shopping", label: "Shopping", reason: "shopping words" });
-  if (hasPrep) candidates.push({ key: "prep", label: "Prep / reminder", reason: "prep/reminder words" });
-
-  if (requested && requested !== "auto" && !candidates.find(c => c.key === requested)) {
-    candidates.push({ key: requested, label: `Selected dropdown bucket: ${requested}`, reason: "selected by user" });
-  }
-
-  return candidates.filter((item, index, all) => all.findIndex(x => x.key === item.key) === index);
-}
-
-function v4824ChooseBucket(text, requested = "auto") {
-  const candidates = v4824Candidates(text, requested);
-  if (!candidates.length) return requested;
-  if (candidates.length === 1 && (requested === "auto" || candidates[0].key === requested)) {
-    return candidates[0].key;
-  }
-
-  const lines = [
-    "This quick capture can fit more than one bucket.",
-    "",
-    `Text: ${text}`,
-    "",
-    "Choose one option by number:",
-    ""
-  ];
-
-  candidates.forEach((item, index) => {
-    lines.push(`${index + 1}. ${item.label} (${item.reason})`);
-  });
-
-  lines.push("");
-  lines.push("Tip: choose 1 for payments that include an amount or the word pay.");
-  lines.push("Cancel = do nothing.");
-
-  const defaultChoice = candidates[0]?.key === "payment" ? "1" : "";
-  const answer = prompt(lines.join("\n"), defaultChoice);
-
-  if (answer === null) return "__cancel__";
-
-  const cleaned = String(answer).trim().toLowerCase();
-  const num = Number(cleaned);
-
-  if (Number.isInteger(num) && num >= 1 && num <= candidates.length) {
-    return candidates[num - 1].key;
-  }
-
-  const byKey = candidates.find(c => c.key === cleaned);
-  if (byKey) return byKey.key;
-
-  return candidates[0]?.key || requested;
-}
-
-function v4824CleanPaymentName(text) {
-  return String(text || "")
-    .replace(/^(pay|paid|payment)\s+(for\s+)?/i, "")
-    .replace(/\bby\s+(today|tomorrow|next\s+\w+|\w+\s*\d{1,2}|\d{1,2}\s*\w+|\d{1,2}[\/.]\d{1,2}(?:[\/.]\d{2,4})?)\b/gi, "")
-    .replace(/\bfor\s+[A-Za-z][A-Za-z'-]*\b/gi, "")
-    .replace(/\$\s*\d+(?:[.,]\d{1,2})?/g, "")
-    .replace(/\d+(?:[.,]\d{1,2})?\s*(\$|usd|dollars)/gi, "")
-    .replace(/\s+/g, " ")
-    .trim() || text;
-}
-
-function v4824CreatePaymentAndCalendar(text, smart) {
-  const date = smart.date || v4824Date(text) || todayIso();
-  const amount = smart.amount || v4824Amount(text) || 0;
-  const child = smart.child && smart.child !== "All family" ? smart.child : v48ChildFromText(text);
-  const name = v4824CleanPaymentName(text);
-  const paid = String(text || "").toLowerCase().startsWith("paid ");
-
-  const payment = {
-    id: uid(),
-    name,
-    amount,
-    due: date,
-    category: "Kids",
-    owner: child || "Both",
-    frequency: "One-time",
-    method: "Credit card",
-    status: paid ? "Paid" : "Upcoming",
-    paidDate: paid ? todayIso() : "",
-    notes: "Added from smart capture",
-    createdAt: Date.now()
-  };
-
-  state.payments.push(payment);
-
-  state.events.push({
-    id: uid(),
-    title: `Payment due: ${name}${amount ? ` — ${money(amount)}` : ""}`,
-    person: child || "All family",
-    date,
-    time: "",
-    location: "",
-    notes: `Linked payment: ${name}`,
-    createdAt: Date.now()
-  });
-
-  v48ShowFeedback(`Smart capture: added payment and calendar due-date reminder for ${name}.`);
-}
-/* ===== End V4.8.24 Bucket Choice Fix ===== */
-
-
 document.getElementById("quickForm")?.addEventListener("submit", function(event){
-  event.preventDefault();
-  event.stopImmediatePropagation();
-
-  const text = document.getElementById("quickText").value.trim();
-  const requested = document.getElementById("quickType").value;
-  if (!text) return;
-
-  const resolvedBucket = v4824ChooseBucket(text, requested);
-  if (resolvedBucket === "__cancel__") return;
-
-  const smart = v48Smart(text, resolvedBucket);
-  const type = resolvedBucket === "auto" ? smart.type : resolvedBucket;
-  const date = smart.date || v4824Date(text);
-
-  if(type==="payment"){
-    v4824CreatePaymentAndCalendar(text, smart);
-  }
-  else if(type==="checklist"){
-    const m=text.match(/(?:checklist|equipment|pack list)\s*(?:for)?\s*([^:,-]+)?[:,-]?\s*(.*)/i);
-    const activity=(m?.[1]||"Activity").trim();
-    const raw=m?.[2]||text;
-    state.equipmentChecklists.push({id:uid(),activity,child:smart.child,items:v48Items(raw.replace(/^(checklist|equipment|pack list)\s*/i,"")),createdAt:Date.now()});
-    v48ShowFeedback(`Smart capture: added equipment checklist for ${activity}.`);
-  }
-  else if(type==="chore"){
-    state.chores.push({id:uid(),title:text.replace(/^chore\s*:?/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,child:smart.child||v48KidName(),due:date||todayIso(),allowance:smart.amount||0,frequency:"One-time",status:"Open",paid:false,createdAt:Date.now()});
-    v48ShowFeedback("Smart capture: added chore.");
-  }
-  else if(type==="reminder"){
-    state.reminders.push({id:uid(),text,due:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});
-    state.prepItems.push({id:uid(),text:text.replace(/^remind(?:er)?\s*:?/i,"").trim()||text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});
-    v48ShowFeedback("Smart capture: added reminder as prep item.");
-  }
-  else {
+  event.preventDefault(); event.stopImmediatePropagation();
+  const text=document.getElementById("quickText").value.trim(), requested=document.getElementById("quickType").value; if(!text)return; const smart=v48Smart(text,requested); const type=smart.type, date=smart.date;
+  if(type==="checklist"){const m=text.match(/(?:checklist|equipment|pack list)\s*(?:for)?\s*([^:,-]+)?[:,-]?\s*(.*)/i); const activity=(m?.[1]||"Activity").trim(); const raw=m?.[2]||text; state.equipmentChecklists.push({id:uid(),activity,child:smart.child,items:v48Items(raw.replace(/^(checklist|equipment|pack list)\s*/i,"")),createdAt:Date.now()}); v48ShowFeedback(`Smart capture: added equipment checklist for ${activity}.`)}
+  else if(type==="chore"){state.chores.push({id:uid(),title:text.replace(/^chore\s*:?/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,child:smart.child||v48KidName(),due:date||todayIso(),allowance:smart.amount||0,frequency:"One-time",status:"Open",paid:false,createdAt:Date.now()}); v48ShowFeedback("Smart capture: added chore.")}
+  else if(type==="reminder"){state.reminders.push({id:uid(),text,due:date||addDays(todayIso(),1),done:false,createdAt:Date.now()}); state.prepItems.push({id:uid(),text:text.replace(/^remind(?:er)?\s*:?/i,"").trim()||text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()}); v48ShowFeedback("Smart capture: added reminder as prep item.")}
+  else { // Delegate old categories with improved feedback by mimicking current logic lightly
     const oldType = type;
-    if(oldType==="shopping"){
-      text.replace(/^(buy|shopping)\s*:?/i,"").split(",").map(x=>x.trim()).filter(Boolean).forEach(name=>state.shopping.push({id:uid(),name,store:"Grocery",done:false,createdAt:Date.now()}));
-    }
-    else if(oldType==="schoolwork"){
-      const l=text.toLowerCase();
-      const itemType=l.includes("exam")?"Exam":l.includes("test")?"Test":l.includes("quiz")?"Quiz":l.includes("project")?"Project":l.includes("reading")?"Reading":"Homework";
-      state.schoolItems.push({id:uid(),title:text,child:smart.child,type:itemType,subject:"",due:date||todayIso(),priority:["Exam","Test","Quiz"].includes(itemType)?"High":"Normal",status:"Open",notes:"Added from smart capture",createdAt:Date.now()});
-    }
-    else if(oldType==="event"){
-      state.events.push({id:uid(),title:text,person:smart.child || "All family",date:date||todayIso(),time:extractTime(text),location:"",notes:"Added from smart capture",createdAt:Date.now()});
-    }
-    else if(oldType==="prep"){
-      state.prepItems.push({id:uid(),text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});
-    }
-    else if(oldType==="decision"){
-      state.decisions.push({id:uid(),title:text.replace(/^decision\s*:?/i,"").trim(),owner:"Both",due:date,options:"",status:"Open",createdAt:Date.now()});
-    }
-    else if(oldType==="admin"){
-      state.adminItems.push({id:uid(),title:text,category:"Other",owner:"Both",due:date,notes:"Added from smart capture",status:"Open",createdAt:Date.now()});
-    }
-    else {
-      state.tasks.push({id:uid(),title:text,owner:"Both",due:date,category:"Other",priority:"Normal",done:false,createdAt:Date.now()});
-    }
-    v48ShowFeedback(`Smart capture: added ${oldType}.`);
+    if(oldType==="shopping"){text.replace(/^(buy|shopping)\s*:?/i,"").split(",").map(x=>x.trim()).filter(Boolean).forEach(name=>state.shopping.push({id:uid(),name,store:"Grocery",done:false,createdAt:Date.now()}));}
+    else if(oldType==="payment"){const paid=text.toLowerCase().startsWith("paid "); state.payments.push({id:uid(),name:text.replace(/^(pay|paid)\s+/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,amount:smart.amount,due:date||todayIso(),category:"Other",owner:"Both",frequency:"One-time",method:"Credit card",status:paid?"Paid":"Upcoming",paidDate:paid?todayIso():"",notes:"Added from smart capture",createdAt:Date.now()});}
+    else if(oldType==="schoolwork"){const l=text.toLowerCase(); const itemType=l.includes("exam")?"Exam":l.includes("test")?"Test":l.includes("quiz")?"Quiz":l.includes("project")?"Project":l.includes("reading")?"Reading":"Homework"; state.schoolItems.push({id:uid(),title:text,child:smart.child,type:itemType,subject:"",due:date||todayIso(),priority:["Exam","Test","Quiz"].includes(itemType)?"High":"Normal",status:"Open",notes:"Added from smart capture",createdAt:Date.now()});}
+    else if(oldType==="event"){state.events.push({id:uid(),title:text,person:"All family",date:date||todayIso(),time:extractTime(text),location:"",notes:"Added from smart capture",createdAt:Date.now()});}
+    else if(oldType==="prep"){state.prepItems.push({id:uid(),text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});}
+    else if(oldType==="decision"){state.decisions.push({id:uid(),title:text.replace(/^decision\s*:?/i,"").trim(),owner:"Both",due:date,options:"",status:"Open",createdAt:Date.now()});}
+    else if(oldType==="admin"){state.adminItems.push({id:uid(),title:text,category:"Other",owner:"Both",due:date,notes:"Added from smart capture",status:"Open",createdAt:Date.now()});}
+    else {state.tasks.push({id:uid(),title:text,owner:"Both",due:date,category:"Other",priority:"Normal",done:false,createdAt:Date.now()});}
+    v48ShowFeedback(`Smart capture: added ${oldType}.`)
   }
-
-  document.getElementById("quickText").value="";
-  saveState();
-  render();
+  document.getElementById("quickText").value=""; saveState(); render();
 }, true);
 
 document.addEventListener("click", e=>{const b=e.target.closest("[data-v48]"); if(!b)return; const action=b.dataset.v48,id=b.dataset.id; v48EnsureArrays(); if(action==="equipmentToPrep"){const x=state.equipmentChecklists.find(y=>y.id===id); if(x)state.prepItems.push({id:uid(),text:`${x.activity}: ${v48Items(x.items).join(", ")}`,owner:"Both",date:addDays(todayIso(),1),done:false,createdAt:Date.now()})} if(action==="deleteEquipment")state.equipmentChecklists=state.equipmentChecklists.filter(x=>x.id!==id); if(action==="toggleChore"){const c=state.chores.find(x=>x.id===id); if(c)c.status=c.status==="Done"?"Open":"Done"} if(action==="payChore"){const c=state.chores.find(x=>x.id===id); if(c)c.paid=true} if(action==="deleteChore")state.chores=state.chores.filter(x=>x.id!==id); saveState(); render()});

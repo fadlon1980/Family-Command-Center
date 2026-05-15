@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V4.8.26</title>
+  <title>Family Command Center V4.8.27</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -710,6 +710,23 @@
               <p id="cloudDebugText" class="muted small-note">Connection step details will appear in the cloud status message above.</p>
             </div>
 
+
+            
+            <div class="manual-save-panel">
+              <div class="section-title">
+                <div>
+                  <h3>Manual cloud save mode</h3>
+                  <p class="muted">Auto-save is disabled to prevent Firestore write loops and quota burn. Changes are saved locally first. Use manual save only when you are ready to push to the shared family cloud.</p>
+                </div>
+              </div>
+              <div id="manualSaveStatus" class="manual-save-status">Manual save mode is active. No automatic cloud writes will run.</div>
+              <div class="button-row">
+                <button id="manualSaveToCloudBtn" type="button" class="secondary">Save local changes to cloud</button>
+                <button id="pullLatestManualBtn" type="button" class="ghost">Pull latest from cloud</button>
+                <button id="clearPendingManualBtn" type="button" class="ghost">Clear pending local flag</button>
+              </div>
+              <p class="muted small-note">Recommended: Pull latest before making changes on a second device. Save to cloud only from one device at a time.</p>
+            </div>
 
             <div class="diagnostics-panel">
               <div class="section-title">
