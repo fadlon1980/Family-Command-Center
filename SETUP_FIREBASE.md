@@ -1,6 +1,6 @@
-# V4.8.23 Setup Notes
+# V4.8.24 Setup Notes
 
-No Firestore rules change is required if V4.8.20 or V4.8.15 rules are already published.
+No Firestore rules change is required.
 
 ## Upload
 
@@ -9,7 +9,7 @@ Upload all files to GitHub Pages.
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-23
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-24
 ```
 
 ## Test

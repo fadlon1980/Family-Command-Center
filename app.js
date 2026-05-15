@@ -3210,7 +3210,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.23";
+const APP_VERSION = "4.8.24";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -4187,25 +4187,198 @@ function v48Render(){v48EnsureArrays(); ["choreChild","equipmentChild"].forEach(
 const __v48OriginalRender = render;
 render = function(){ __v48OriginalRender(); v48Render(); };
 
-document.getElementById("quickForm")?.addEventListener("submit", function(event){
-  event.preventDefault(); event.stopImmediatePropagation();
-  const text=document.getElementById("quickText").value.trim(), requested=document.getElementById("quickType").value; if(!text)return; const smart=v48Smart(text,requested); const type=smart.type, date=smart.date;
-  if(type==="checklist"){const m=text.match(/(?:checklist|equipment|pack list)\s*(?:for)?\s*([^:,-]+)?[:,-]?\s*(.*)/i); const activity=(m?.[1]||"Activity").trim(); const raw=m?.[2]||text; state.equipmentChecklists.push({id:uid(),activity,child:smart.child,items:v48Items(raw.replace(/^(checklist|equipment|pack list)\s*/i,"")),createdAt:Date.now()}); v48ShowFeedback(`Smart capture: added equipment checklist for ${activity}.`)}
-  else if(type==="chore"){state.chores.push({id:uid(),title:text.replace(/^chore\s*:?/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,child:smart.child||v48KidName(),due:date||todayIso(),allowance:smart.amount||0,frequency:"One-time",status:"Open",paid:false,createdAt:Date.now()}); v48ShowFeedback("Smart capture: added chore.")}
-  else if(type==="reminder"){state.reminders.push({id:uid(),text,due:date||addDays(todayIso(),1),done:false,createdAt:Date.now()}); state.prepItems.push({id:uid(),text:text.replace(/^remind(?:er)?\s*:?/i,"").trim()||text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()}); v48ShowFeedback("Smart capture: added reminder as prep item.")}
-  else { // Delegate old categories with improved feedback by mimicking current logic lightly
-    const oldType = type;
-    if(oldType==="shopping"){text.replace(/^(buy|shopping)\s*:?/i,"").split(",").map(x=>x.trim()).filter(Boolean).forEach(name=>state.shopping.push({id:uid(),name,store:"Grocery",done:false,createdAt:Date.now()}));}
-    else if(oldType==="payment"){const paid=text.toLowerCase().startsWith("paid "); state.payments.push({id:uid(),name:text.replace(/^(pay|paid)\s+/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,amount:smart.amount,due:date||todayIso(),category:"Other",owner:"Both",frequency:"One-time",method:"Credit card",status:paid?"Paid":"Upcoming",paidDate:paid?todayIso():"",notes:"Added from smart capture",createdAt:Date.now()});}
-    else if(oldType==="schoolwork"){const l=text.toLowerCase(); const itemType=l.includes("exam")?"Exam":l.includes("test")?"Test":l.includes("quiz")?"Quiz":l.includes("project")?"Project":l.includes("reading")?"Reading":"Homework"; state.schoolItems.push({id:uid(),title:text,child:smart.child,type:itemType,subject:"",due:date||todayIso(),priority:["Exam","Test","Quiz"].includes(itemType)?"High":"Normal",status:"Open",notes:"Added from smart capture",createdAt:Date.now()});}
-    else if(oldType==="event"){state.events.push({id:uid(),title:text,person:"All family",date:date||todayIso(),time:extractTime(text),location:"",notes:"Added from smart capture",createdAt:Date.now()});}
-    else if(oldType==="prep"){state.prepItems.push({id:uid(),text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});}
-    else if(oldType==="decision"){state.decisions.push({id:uid(),title:text.replace(/^decision\s*:?/i,"").trim(),owner:"Both",due:date,options:"",status:"Open",createdAt:Date.now()});}
-    else if(oldType==="admin"){state.adminItems.push({id:uid(),title:text,category:"Other",owner:"Both",due:date,notes:"Added from smart capture",status:"Open",createdAt:Date.now()});}
-    else {state.tasks.push({id:uid(),title:text,owner:"Both",due:date,category:"Other",priority:"Normal",done:false,createdAt:Date.now()});}
-    v48ShowFeedback(`Smart capture: added ${oldType}.`)
+
+/* ===== V4.8.24 Active Quick Capture Bucket Choice Fix ===== */
+function v4824Amount(text) {
+  return typeof smartExtractAmount === "function" ? smartExtractAmount(text) : extractAmount(text);
+}
+
+function v4824Date(text) {
+  return (typeof smartExtractDate === "function" ? smartExtractDate(text) : "") || extractDate(text);
+}
+
+function v4824Candidates(text, requested = "auto") {
+  const lower = String(text || "").toLowerCase();
+  const amount = v4824Amount(text);
+  const candidates = [];
+
+  const hasPayment = amount > 0 || /\b(pay|payment|paid|fee|bill|invoice|tuition|subscription|cost)\b/.test(lower);
+  const hasEvent = /\b(lesson|practice|appointment|meeting|game|class|dentist|doctor|activity)\b/.test(lower) || Boolean(extractTime(text));
+  const hasSchool = /\b(exam|test|quiz|homework|assignment|project due|reading)\b/.test(lower);
+  const hasShopping = /\b(buy|shopping|grocery|groceries|need to buy)\b/.test(lower);
+  const hasPrep = /\b(remind|remember|prepare|pack)\b/.test(lower);
+
+  if (hasPayment) candidates.push({ key: "payment", label: "Payment + calendar due-date reminder", reason: amount ? `amount $${amount}` : "payment words" });
+  if (hasEvent) candidates.push({ key: "event", label: "Calendar event", reason: "lesson/event/time words" });
+  if (hasSchool) candidates.push({ key: "schoolwork", label: "Homework / exam", reason: "school words" });
+  if (hasShopping) candidates.push({ key: "shopping", label: "Shopping", reason: "shopping words" });
+  if (hasPrep) candidates.push({ key: "prep", label: "Prep / reminder", reason: "prep/reminder words" });
+
+  if (requested && requested !== "auto" && !candidates.find(c => c.key === requested)) {
+    candidates.push({ key: requested, label: `Selected dropdown bucket: ${requested}`, reason: "selected by user" });
   }
-  document.getElementById("quickText").value=""; saveState(); render();
+
+  return candidates.filter((item, index, all) => all.findIndex(x => x.key === item.key) === index);
+}
+
+function v4824ChooseBucket(text, requested = "auto") {
+  const candidates = v4824Candidates(text, requested);
+  if (!candidates.length) return requested;
+  if (candidates.length === 1 && (requested === "auto" || candidates[0].key === requested)) {
+    return candidates[0].key;
+  }
+
+  const lines = [
+    "This quick capture can fit more than one bucket.",
+    "",
+    `Text: ${text}`,
+    "",
+    "Choose one option by number:",
+    ""
+  ];
+
+  candidates.forEach((item, index) => {
+    lines.push(`${index + 1}. ${item.label} (${item.reason})`);
+  });
+
+  lines.push("");
+  lines.push("Tip: choose 1 for payments that include an amount or the word pay.");
+  lines.push("Cancel = do nothing.");
+
+  const defaultChoice = candidates[0]?.key === "payment" ? "1" : "";
+  const answer = prompt(lines.join("\n"), defaultChoice);
+
+  if (answer === null) return "__cancel__";
+
+  const cleaned = String(answer).trim().toLowerCase();
+  const num = Number(cleaned);
+
+  if (Number.isInteger(num) && num >= 1 && num <= candidates.length) {
+    return candidates[num - 1].key;
+  }
+
+  const byKey = candidates.find(c => c.key === cleaned);
+  if (byKey) return byKey.key;
+
+  return candidates[0]?.key || requested;
+}
+
+function v4824CleanPaymentName(text) {
+  return String(text || "")
+    .replace(/^(pay|paid|payment)\s+(for\s+)?/i, "")
+    .replace(/\bby\s+(today|tomorrow|next\s+\w+|\w+\s*\d{1,2}|\d{1,2}\s*\w+|\d{1,2}[\/.]\d{1,2}(?:[\/.]\d{2,4})?)\b/gi, "")
+    .replace(/\bfor\s+[A-Za-z][A-Za-z'-]*\b/gi, "")
+    .replace(/\$\s*\d+(?:[.,]\d{1,2})?/g, "")
+    .replace(/\d+(?:[.,]\d{1,2})?\s*(\$|usd|dollars)/gi, "")
+    .replace(/\s+/g, " ")
+    .trim() || text;
+}
+
+function v4824CreatePaymentAndCalendar(text, smart) {
+  const date = smart.date || v4824Date(text) || todayIso();
+  const amount = smart.amount || v4824Amount(text) || 0;
+  const child = smart.child && smart.child !== "All family" ? smart.child : v48ChildFromText(text);
+  const name = v4824CleanPaymentName(text);
+  const paid = String(text || "").toLowerCase().startsWith("paid ");
+
+  const payment = {
+    id: uid(),
+    name,
+    amount,
+    due: date,
+    category: "Kids",
+    owner: child || "Both",
+    frequency: "One-time",
+    method: "Credit card",
+    status: paid ? "Paid" : "Upcoming",
+    paidDate: paid ? todayIso() : "",
+    notes: "Added from smart capture",
+    createdAt: Date.now()
+  };
+
+  state.payments.push(payment);
+
+  state.events.push({
+    id: uid(),
+    title: `Payment due: ${name}${amount ? ` — ${money(amount)}` : ""}`,
+    person: child || "All family",
+    date,
+    time: "",
+    location: "",
+    notes: `Linked payment: ${name}`,
+    createdAt: Date.now()
+  });
+
+  v48ShowFeedback(`Smart capture: added payment and calendar due-date reminder for ${name}.`);
+}
+/* ===== End V4.8.24 Bucket Choice Fix ===== */
+
+
+document.getElementById("quickForm")?.addEventListener("submit", function(event){
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  const text = document.getElementById("quickText").value.trim();
+  const requested = document.getElementById("quickType").value;
+  if (!text) return;
+
+  const resolvedBucket = v4824ChooseBucket(text, requested);
+  if (resolvedBucket === "__cancel__") return;
+
+  const smart = v48Smart(text, resolvedBucket);
+  const type = resolvedBucket === "auto" ? smart.type : resolvedBucket;
+  const date = smart.date || v4824Date(text);
+
+  if(type==="payment"){
+    v4824CreatePaymentAndCalendar(text, smart);
+  }
+  else if(type==="checklist"){
+    const m=text.match(/(?:checklist|equipment|pack list)\s*(?:for)?\s*([^:,-]+)?[:,-]?\s*(.*)/i);
+    const activity=(m?.[1]||"Activity").trim();
+    const raw=m?.[2]||text;
+    state.equipmentChecklists.push({id:uid(),activity,child:smart.child,items:v48Items(raw.replace(/^(checklist|equipment|pack list)\s*/i,"")),createdAt:Date.now()});
+    v48ShowFeedback(`Smart capture: added equipment checklist for ${activity}.`);
+  }
+  else if(type==="chore"){
+    state.chores.push({id:uid(),title:text.replace(/^chore\s*:?/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,child:smart.child||v48KidName(),due:date||todayIso(),allowance:smart.amount||0,frequency:"One-time",status:"Open",paid:false,createdAt:Date.now()});
+    v48ShowFeedback("Smart capture: added chore.");
+  }
+  else if(type==="reminder"){
+    state.reminders.push({id:uid(),text,due:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});
+    state.prepItems.push({id:uid(),text:text.replace(/^remind(?:er)?\s*:?/i,"").trim()||text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});
+    v48ShowFeedback("Smart capture: added reminder as prep item.");
+  }
+  else {
+    const oldType = type;
+    if(oldType==="shopping"){
+      text.replace(/^(buy|shopping)\s*:?/i,"").split(",").map(x=>x.trim()).filter(Boolean).forEach(name=>state.shopping.push({id:uid(),name,store:"Grocery",done:false,createdAt:Date.now()}));
+    }
+    else if(oldType==="schoolwork"){
+      const l=text.toLowerCase();
+      const itemType=l.includes("exam")?"Exam":l.includes("test")?"Test":l.includes("quiz")?"Quiz":l.includes("project")?"Project":l.includes("reading")?"Reading":"Homework";
+      state.schoolItems.push({id:uid(),title:text,child:smart.child,type:itemType,subject:"",due:date||todayIso(),priority:["Exam","Test","Quiz"].includes(itemType)?"High":"Normal",status:"Open",notes:"Added from smart capture",createdAt:Date.now()});
+    }
+    else if(oldType==="event"){
+      state.events.push({id:uid(),title:text,person:smart.child || "All family",date:date||todayIso(),time:extractTime(text),location:"",notes:"Added from smart capture",createdAt:Date.now()});
+    }
+    else if(oldType==="prep"){
+      state.prepItems.push({id:uid(),text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});
+    }
+    else if(oldType==="decision"){
+      state.decisions.push({id:uid(),title:text.replace(/^decision\s*:?/i,"").trim(),owner:"Both",due:date,options:"",status:"Open",createdAt:Date.now()});
+    }
+    else if(oldType==="admin"){
+      state.adminItems.push({id:uid(),title:text,category:"Other",owner:"Both",due:date,notes:"Added from smart capture",status:"Open",createdAt:Date.now()});
+    }
+    else {
+      state.tasks.push({id:uid(),title:text,owner:"Both",due:date,category:"Other",priority:"Normal",done:false,createdAt:Date.now()});
+    }
+    v48ShowFeedback(`Smart capture: added ${oldType}.`);
+  }
+
+  document.getElementById("quickText").value="";
+  saveState();
+  render();
 }, true);
 
 document.addEventListener("click", e=>{const b=e.target.closest("[data-v48]"); if(!b)return; const action=b.dataset.v48,id=b.dataset.id; v48EnsureArrays(); if(action==="equipmentToPrep"){const x=state.equipmentChecklists.find(y=>y.id===id); if(x)state.prepItems.push({id:uid(),text:`${x.activity}: ${v48Items(x.items).join(", ")}`,owner:"Both",date:addDays(todayIso(),1),done:false,createdAt:Date.now()})} if(action==="deleteEquipment")state.equipmentChecklists=state.equipmentChecklists.filter(x=>x.id!==id); if(action==="toggleChore"){const c=state.chores.find(x=>x.id===id); if(c)c.status=c.status==="Done"?"Open":"Done"} if(action==="payChore"){const c=state.chores.find(x=>x.id===id); if(c)c.paid=true} if(action==="deleteChore")state.chores=state.chores.filter(x=>x.id!==id); saveState(); render()});

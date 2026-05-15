@@ -1,7 +1,7 @@
 {
-  "name": "Family Command Center V4.8.23",
+  "name": "Family Command Center V4.8.24",
   "short_name": "Family Hub",
-  "description": "Adds bucket choice prompt for ambiguous Quick Capture inputs.",
+  "description": "Fixes active quick-capture handler so ambiguous prompts ask which bucket to use.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
