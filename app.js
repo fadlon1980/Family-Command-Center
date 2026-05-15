@@ -164,7 +164,7 @@ function demoData() {
       { id: uid(), name: "Fruit for lunch boxes", store: "Grocery", done: false, createdAt: Date.now() }
     ],
     inbox: [
-      { id: uid(), text: "Check if basketball payment was made", type: "Money", createdAt: Date.now() },
+      { id: uid(), text: "Check if basketball payment was made", type: "Payments", createdAt: Date.now() },
       { id: uid(), text: "Ask teacher about field trip details", type: "School", createdAt: Date.now() }
     ],
     prepItems: [
@@ -178,7 +178,7 @@ function demoData() {
       { id: uid(), title: "Submit field trip permission slip", category: "School form", owner: "Wife", due: addDays(todayIso(), 3), notes: "Check school email", status: "Open", createdAt: Date.now() }
     ],
     schoolItems: [
-      { id: uid(), title: "Math homework - chapter practice", child: "Kid 1", type: "Homework", subject: "Math", due: addDays(todayIso(), 2), priority: "Normal", status: "Open", notes: "Check workbook", createdAt: Date.now() },
+      { id: uid(), title: "Math homework - chapter practice", child: "Kid 1", type: "School", subject: "Math", due: addDays(todayIso(), 2), priority: "Normal", status: "Open", notes: "Check workbook", createdAt: Date.now() },
       { id: uid(), title: "Science exam", child: "Kid 2", type: "Exam", subject: "Science", due: addDays(todayIso(), 6), priority: "High", status: "Open", notes: "Review study guide", createdAt: Date.now() }
     ],
     routines: {
@@ -238,6 +238,9 @@ function setManualSaveStatus(message, level = "warn") {
     el.textContent = message;
     el.className = `manual-save-status ${level === "good" ? "good" : level === "bad" ? "bad" : ""}`;
   }
+  if (typeof setGlobalSaveBar === "function") {
+    setGlobalSaveBar(message, level);
+  }
   if (typeof setCloudStatus === "function") {
     setCloudStatus(message, level);
   }
@@ -252,6 +255,7 @@ function markManualPending(reason = "local change") {
     }));
   } catch {}
   renderManualSaveStatus();
+  if (typeof renderGlobalSaveBarStatus === "function") renderGlobalSaveBarStatus();
 }
 
 function clearManualPending() {
@@ -259,6 +263,7 @@ function clearManualPending() {
     localStorage.removeItem(MANUAL_PENDING_KEY);
   } catch {}
   renderManualSaveStatus();
+  if (typeof renderGlobalSaveBarStatus === "function") renderGlobalSaveBarStatus();
 }
 
 function getManualPending() {
@@ -462,6 +467,72 @@ function clearPendingManualFlag() {
   setManualSaveStatus("Pending local flag cleared. This does not delete app data.", "good");
 }
 
+
+/* ===== V4.8.28 Global Manual Save Bar ===== */
+function setGlobalSaveBar(message, level = "warn") {
+  const bar = document.getElementById("globalManualSaveBar");
+  const text = document.getElementById("globalManualSaveText");
+  if (!bar || !text) return;
+
+  bar.classList.remove("good", "bad", "warn");
+  if (level === "good") bar.classList.add("good");
+  else if (level === "bad") bar.classList.add("bad");
+  else bar.classList.add("warn");
+
+  text.textContent = message;
+}
+
+function renderGlobalSaveBarStatus() {
+  const pending = typeof getManualPending === "function" ? getManualPending() : null;
+  if (pending?.at) {
+    setGlobalSaveBar(`Unsaved local changes · ${new Date(pending.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`, "warn");
+  } else {
+    setGlobalSaveBar("Manual save mode · no pending changes", "good");
+  }
+}
+
+function wireGlobalManualSaveBar() {
+  document.getElementById("globalSaveToCloudBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("globalSaveToCloudBtn");
+    const original = btn?.textContent || "Save to cloud";
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+      }
+      await manualSaveLocalChangesToCloud();
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+      renderGlobalSaveBarStatus();
+    }
+  });
+
+  document.getElementById("globalPullLatestBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("globalPullLatestBtn");
+    const original = btn?.textContent || "Pull latest";
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Pulling...";
+      }
+      await pullLatestManualFromCloud();
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+      renderGlobalSaveBarStatus();
+    }
+  });
+
+  renderGlobalSaveBarStatus();
+}
+/* ===== End V4.8.28 Global Manual Save Bar ===== */
+
+
 function wireManualSaveControls() {
   document.getElementById("manualSaveToCloudBtn")?.addEventListener("click", manualSaveLocalChangesToCloud);
   document.getElementById("pullLatestManualBtn")?.addEventListener("click", pullLatestManualFromCloud);
@@ -636,6 +707,7 @@ function inferQuickType(text, requestedType) {
 
 function render() {
   if (typeof renderManualSaveStatus === "function") setTimeout(renderManualSaveStatus, 0);
+  if (typeof renderGlobalSaveBarStatus === "function") setTimeout(renderGlobalSaveBarStatus, 0);
   document.getElementById("familyTitle").textContent = `${state.settings.familyName} Hub`;
   document.getElementById("todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
@@ -1800,7 +1872,7 @@ document.getElementById("quickForm").addEventListener("submit", event => {
   } else if (type === "schoolwork") {
     const lower = text.toLowerCase();
     const child = state.settings.children.find(name => lower.includes(name.toLowerCase())) || "All family";
-    const itemType = lower.includes("exam") ? "Exam" : lower.includes("test") ? "Test" : lower.includes("quiz") ? "Quiz" : lower.includes("project") ? "Project" : lower.includes("reading") ? "Reading" : "Homework";
+    const itemType = lower.includes("exam") ? "Exam" : lower.includes("test") ? "Test" : lower.includes("quiz") ? "Quiz" : lower.includes("project") ? "Project" : lower.includes("reading") ? "Reading" : "School";
     state.schoolItems.push({
       id: uid(),
       title: text,
@@ -2909,7 +2981,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.27";
+const APP_VERSION = "4.8.29";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3778,6 +3850,7 @@ window.addEventListener("load", async () => {
   wireCloudRecoveryControls();
   wireDiagnosticsControls();
 wireManualSaveControls();
+wireGlobalManualSaveBar();
   wireGoogleCalendarControls();
   wireRoleSetupControls();
   renderCloudPanel();
@@ -3861,7 +3934,7 @@ function v48Items(v){return Array.isArray(v)?v.map(x=>String(x).trim()).filter(B
 function v48ChildFromText(text){const l=text.toLowerCase(); return (state.settings.children||[]).find(n=>l.includes(String(n).toLowerCase())) || (v48IsKid()?v48KidName():"All family")}
 function v48Smart(text, requested){const lower=text.toLowerCase(); let type=requested==="auto"?(typeof inferQuickType==="function"?inferQuickType(text,requested):"task"):requested; if(requested==="auto"){ if(lower.includes("chore")||lower.includes("allowance")||lower.startsWith("clean ")||lower.startsWith("empty "))type="chore"; if(lower.includes("checklist")||lower.includes("equipment")||lower.includes("bring:")||lower.includes("pack list"))type="checklist"; if(lower.includes("remind ")||lower.startsWith("reminder"))type="reminder";} return {type,date:extractDate(text),amount:extractAmount(text),child:v48ChildFromText(text)}}
 function v48DigestItem(item){const badge=item.type==="Conflict"?"conflict":item.type==="Chore"?"chore":item.type==="Prep"?"reminder":"";return `<div class="item"><div class="item-main"><div class="item-title">${escapeHtml(item.title)}</div><div class="item-meta"><span class="badge ${badge}">${escapeHtml(item.type)}</span><span class="badge">${escapeHtml(item.meta||"")}</span></div></div></div>`}
-function v48RenderDailyDigest(){v48EnsureArrays(); const today=todayIso(),tomorrow=addDays(today,1),weekEnd=addDays(today,7),items=[]; (state.tasks||[]).filter(t=>!t.done&&t.due&&t.due<=today).slice(0,3).forEach(t=>items.push({title:`Task due: ${t.title}`,meta:`${t.owner||"Both"} · ${t.category||"Task"}`,type:"Task"})); (state.schoolItems||[]).filter(s=>s.status!=="Done"&&s.due&&s.due<=weekEnd).slice(0,4).forEach(s=>items.push({title:`${s.type}: ${s.title}`,meta:`${s.child||"Child"} · ${s.subject||"School"} · ${formatDate(s.due)}`,type:"School"})); if(v48IsParent())(state.payments||[]).filter(p=>p.status!=="Paid"&&p.due&&p.due<=weekEnd).slice(0,3).forEach(p=>items.push({title:`Payment due: ${p.name} — ${money(p.amount)}`,meta:`${formatDate(p.due)} · ${p.category}`,type:"Money"})); (state.prepItems||[]).filter(p=>!p.done&&p.date&&p.date<=tomorrow).slice(0,3).forEach(p=>items.push({title:`Prep: ${p.text}`,meta:`${p.owner||"Both"} · ${formatDate(p.date)}`,type:"Prep"})); (state.chores||[]).filter(c=>c.status!=="Done"&&c.due&&c.due<=today).slice(0,3).forEach(c=>{if(v48IsParent()||c.child===v48KidName())items.push({title:`Chore: ${c.title}`,meta:`${c.child} · ${formatDate(c.due)}${Number(c.allowance)?` · ${money(c.allowance)}`:""}`,type:"Chore"})}); v48GetConflicts().slice(0,2).forEach(c=>items.push({title:`Conflict: ${c.title}`,meta:c.meta,type:"Conflict"})); renderList("dailyDigestList",items,v48DigestItem,"No urgent digest items right now.")}
+function v48RenderDailyDigest(){v48EnsureArrays(); const today=todayIso(),tomorrow=addDays(today,1),weekEnd=addDays(today,7),items=[]; (state.tasks||[]).filter(t=>!t.done&&t.due&&t.due<=today).slice(0,3).forEach(t=>items.push({title:`Task due: ${t.title}`,meta:`${t.owner||"Both"} · ${t.category||"Task"}`,type:"Task"})); (state.schoolItems||[]).filter(s=>s.status!=="Done"&&s.due&&s.due<=weekEnd).slice(0,4).forEach(s=>items.push({title:`${s.type}: ${s.title}`,meta:`${s.child||"Child"} · ${s.subject||"School"} · ${formatDate(s.due)}`,type:"School"})); if(v48IsParent())(state.payments||[]).filter(p=>p.status!=="Paid"&&p.due&&p.due<=weekEnd).slice(0,3).forEach(p=>items.push({title:`Payment due: ${p.name} — ${money(p.amount)}`,meta:`${formatDate(p.due)} · ${p.category}`,type:"Payments"})); (state.prepItems||[]).filter(p=>!p.done&&p.date&&p.date<=tomorrow).slice(0,3).forEach(p=>items.push({title:`Prep: ${p.text}`,meta:`${p.owner||"Both"} · ${formatDate(p.date)}`,type:"Prep"})); (state.chores||[]).filter(c=>c.status!=="Done"&&c.due&&c.due<=today).slice(0,3).forEach(c=>{if(v48IsParent()||c.child===v48KidName())items.push({title:`Chore: ${c.title}`,meta:`${c.child} · ${formatDate(c.due)}${Number(c.allowance)?` · ${money(c.allowance)}`:""}`,type:"Chore"})}); v48GetConflicts().slice(0,2).forEach(c=>items.push({title:`Conflict: ${c.title}`,meta:c.meta,type:"Conflict"})); renderList("dailyDigestList",items,v48DigestItem,"No urgent digest items right now.")}
 function v48TimedEvents(){const manual=(state.events||[]).filter(e=>e.date&&e.time).map(e=>{const s=new Date(`${e.date}T${e.time}`);return{source:"App",title:e.title,person:e.person||"All family",start:s,end:new Date(s.getTime()+3600000)}}); const google=(calendar?.events||[]).filter(e=>e.startDate&&!e.allDay).map(e=>({source:"Google",title:e.summary,person:"All family",start:new Date(e.startDate),end:e.endDate?new Date(e.endDate):new Date(new Date(e.startDate).getTime()+3600000)})); return [...manual,...google].filter(e=>!isNaN(e.start)&&!isNaN(e.end)).sort((a,b)=>a.start-b.start)}
 function v48OverlapPeople(a,b){return a.person==="All family"||b.person==="All family"||a.person==="Both"||b.person==="Both"||a.person===b.person}
 function v48GetConflicts(){const e=v48TimedEvents(),out=[]; for(let i=0;i<e.length;i++){for(let j=i+1;j<e.length;j++){if(e[j].start>=e[i].end)break; if(e[i].start<e[j].end&&e[j].start<e[i].end&&v48OverlapPeople(e[i],e[j]))out.push({title:`${e[i].title} overlaps with ${e[j].title}`,meta:`${e[i].start.toLocaleString(undefined,{weekday:"short",hour:"numeric",minute:"2-digit"})} · ${e[i].person} · ${e[i].source}/${e[j].source}`})}} return out}
@@ -3889,7 +3962,7 @@ document.getElementById("quickForm")?.addEventListener("submit", function(event)
     const oldType = type;
     if(oldType==="shopping"){text.replace(/^(buy|shopping)\s*:?/i,"").split(",").map(x=>x.trim()).filter(Boolean).forEach(name=>state.shopping.push({id:uid(),name,store:"Grocery",done:false,createdAt:Date.now()}));}
     else if(oldType==="payment"){const paid=text.toLowerCase().startsWith("paid "); state.payments.push({id:uid(),name:text.replace(/^(pay|paid)\s+/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,amount:smart.amount,due:date||todayIso(),category:"Other",owner:"Both",frequency:"One-time",method:"Credit card",status:paid?"Paid":"Upcoming",paidDate:paid?todayIso():"",notes:"Added from smart capture",createdAt:Date.now()});}
-    else if(oldType==="schoolwork"){const l=text.toLowerCase(); const itemType=l.includes("exam")?"Exam":l.includes("test")?"Test":l.includes("quiz")?"Quiz":l.includes("project")?"Project":l.includes("reading")?"Reading":"Homework"; state.schoolItems.push({id:uid(),title:text,child:smart.child,type:itemType,subject:"",due:date||todayIso(),priority:["Exam","Test","Quiz"].includes(itemType)?"High":"Normal",status:"Open",notes:"Added from smart capture",createdAt:Date.now()});}
+    else if(oldType==="schoolwork"){const l=text.toLowerCase(); const itemType=l.includes("exam")?"Exam":l.includes("test")?"Test":l.includes("quiz")?"Quiz":l.includes("project")?"Project":l.includes("reading")?"Reading":"School"; state.schoolItems.push({id:uid(),title:text,child:smart.child,type:itemType,subject:"",due:date||todayIso(),priority:["Exam","Test","Quiz"].includes(itemType)?"High":"Normal",status:"Open",notes:"Added from smart capture",createdAt:Date.now()});}
     else if(oldType==="event"){state.events.push({id:uid(),title:text,person:"All family",date:date||todayIso(),time:extractTime(text),location:"",notes:"Added from smart capture",createdAt:Date.now()});}
     else if(oldType==="prep"){state.prepItems.push({id:uid(),text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});}
     else if(oldType==="decision"){state.decisions.push({id:uid(),title:text.replace(/^decision\s*:?/i,"").trim(),owner:"Both",due:date,options:"",status:"Open",createdAt:Date.now()});}

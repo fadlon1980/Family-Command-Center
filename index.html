@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
-  <title>Family Command Center V4.8.27</title>
+  <title>Family Command Center V4.8.29</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -37,7 +37,7 @@
           <option value="prep">Tomorrow prep</option>
           <option value="decision">Decision</option>
           <option value="admin">School/Admin</option>
-          <option value="schoolwork">Homework / Exam</option>
+          <option value="schoolwork">School / Exam</option>
           <option value="shopping">Shopping</option>
           <option value="chore">Chore</option>
           <option value="checklist">Equipment checklist</option>
@@ -60,9 +60,9 @@
       <button class="tab active" data-screen="today" data-roles="all">Today</button>
       <button class="tab parent-only" data-screen="tasks" data-roles="parent">Tasks</button>
       <button class="tab" data-screen="calendar" data-roles="all">Calendar</button>
-      <button class="tab" data-screen="learning" data-roles="all">Homework</button>
+      <button class="tab" data-screen="learning" data-roles="all">School</button>
       <button class="tab" data-screen="chores" data-roles="all">Chores</button>
-      <button class="tab parent-only" data-screen="money" data-roles="parent">Money</button>
+      <button class="tab parent-only" data-screen="money" data-roles="parent">Payments</button>
       <button class="tab parent-only" data-screen="planning" data-roles="parent">Planning</button>
       <button class="tab" data-screen="shopping" data-roles="all">Shopping</button>
       <button class="tab" data-screen="kids" data-roles="all">Kids</button>
@@ -152,7 +152,7 @@
           <article class="card schoolwork-card">
             <div class="section-title">
               <div>
-                <h2>Homework & exams</h2>
+                <h2>School & exams</h2>
                 <p class="muted">Upcoming homework, projects, quizzes, tests, and exam dates.</p>
               </div>
             </div>
@@ -348,7 +348,7 @@
               <input id="schoolTitle" placeholder="Example: Math homework, Science exam, History project" required />
               <select id="schoolChild"></select>
               <select id="schoolType">
-                <option>Homework</option>
+                <option>School</option>
                 <option>Exam</option>
                 <option>Test</option>
                 <option>Quiz</option>
@@ -513,7 +513,7 @@
                 <option>School</option>
                 <option>Home</option>
                 <option>Kids Activity</option>
-                <option>Money</option>
+                <option>Payments</option>
                 <option>Health</option>
                 <option>Other</option>
               </select>
@@ -852,5 +852,17 @@
 
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
+
+  <div id="globalManualSaveBar" class="global-manual-save-bar" aria-live="polite">
+    <div class="global-save-left">
+      <span id="globalManualSaveDot" class="global-save-dot"></span>
+      <span id="globalManualSaveText">Manual save mode</span>
+    </div>
+    <div class="global-save-actions">
+      <button id="globalPullLatestBtn" type="button" class="ghost compact">Pull latest</button>
+      <button id="globalSaveToCloudBtn" type="button" class="secondary compact">Save to cloud</button>
+    </div>
+  </div>
+
 </body>
 </html>

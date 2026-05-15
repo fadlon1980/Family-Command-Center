@@ -980,3 +980,96 @@ h3 { font-size: 1rem; margin-bottom: 0.2rem; }
   background: #fef2f2;
   border-color: #fecaca;
 }
+
+
+.global-manual-save-bar {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.global-save-left {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  color: #1e3a8a;
+  font-weight: 900;
+  font-size: 0.9rem;
+}
+
+.global-save-left span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-save-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: #f59e0b;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+}
+
+.global-manual-save-bar.good .global-save-dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+}
+
+.global-manual-save-bar.bad .global-save-dot {
+  background: #dc2626;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.15);
+}
+
+.global-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+button.compact {
+  padding: 0.45rem 0.75rem;
+  min-height: 0;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  line-height: 1.1;
+}
+
+body {
+  padding-bottom: 5.5rem;
+}
+
+@media (max-width: 640px) {
+  .global-manual-save-bar {
+    align-items: stretch;
+    border-radius: 22px;
+    flex-direction: column;
+  }
+
+  .global-save-left {
+    width: 100%;
+  }
+
+  .global-save-actions {
+    width: 100%;
+  }
+
+  .global-save-actions button {
+    flex: 1;
+  }
+}

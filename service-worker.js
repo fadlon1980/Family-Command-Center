@@ -1,4 +1,4 @@
-const CACHE_NAME = "family-command-center-v4-8-27";
+const CACHE_NAME = "family-command-center-v4-8-29";
 const ASSETS = [
   "./",
   "./index.html",
