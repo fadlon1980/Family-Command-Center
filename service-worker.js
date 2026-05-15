@@ -1,52 +1,30 @@
-# Family Command Center PWA V4.8.30 — Phase 1 Quota Burn Fix
+const CACHE_NAME = "family-command-center-v4-8-30";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./firebase-config.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
+];
 
-This version is based on V4.8.29 and applies Phase 1 from the external review report.
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
+  self.skipWaiting();
+});
 
-## Phase 1 fixes included
+self.addEventListener("activate", event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
+  );
+  self.clients.claim();
+});
 
-### Issue 1.1 — autoAssignCurrentUserRole write loop
-
-Fixed:
-
-- Skip writing if role and childName already match.
-- Remove `roleAutoAssignedAt: serverTimestamp()`.
-- Keep owner/admin downgrade protection.
-
-Why:
-
-`serverTimestamp()` changes every write, which can retrigger the members `onSnapshot` listener and create a write loop.
-
-### Issue 1.2 — applyRoleRulesToAllMembers unnecessary writes
-
-Fixed:
-
-- Skip members whose role and childName already match.
-- Remove `roleAutoAssignedAt: serverTimestamp()`.
-- Show how many member records were actually updated.
-
-## Still included from V4.8.29
-
-- Manual cloud save mode
-- Global Manual Save Bar
-- No automatic cloud save
-- Payments / School labels
-- No presence heartbeat writes
-- Profile mapping writes disabled on login
-
-## Open after upload
-
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-30
-```
-
-## Firestore rules
-
-No Firestore rules change is required if V4.8.27 safe manual-save rules are already published.
-
-## Safe test
-
-1. Open the app.
-2. Do not click Save to cloud yet if quota is still exceeded.
-3. Watch Firebase usage for 5–10 minutes.
-4. Confirm writes do not keep increasing while the app is idle.
-5. After quota resets, test one manual save only.
+self.addEventListener("fetch", event => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    caches.match(event.request).then(cached => cached || fetch(event.request).catch(() => caches.match("./index.html")))
+  );
+});

@@ -1,30 +1,21 @@
-const CACHE_NAME = "family-command-center-v4-8-30";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./firebase-config.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
-];
+# V4.8.30 Setup Notes
 
-self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
-  self.skipWaiting();
-});
+No Firestore rules change is required if the V4.8.27 safe manual-save rules are already published.
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
-  );
-  self.clients.claim();
-});
+## Upload
 
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).catch(() => caches.match("./index.html")))
-  );
-});
+Upload all files to GitHub Pages.
+
+Open:
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-30
+```
+
+## Test Phase 1
+
+1. Open app and sign in.
+2. Keep app idle for 5 minutes.
+3. Check Firebase usage.
+4. Writes should not continue increasing.
+5. If you click Re-apply role rules and roles already match, the app should say no writes were needed.
