@@ -1,174 +1,20 @@
-rules_version = '2';
+// Family Command Center V4.4 - Firebase config
+// Keep the variable name exactly as FAMILY_FIREBASE_CONFIG.
 
-// V4.8.31 Safe Manual Save Rules
-// Purpose:
-// 1. Prevent old app versions from creating automatic write loops.
-// 2. Allow reading the family data.
-// 3. Allow writing families/{familyId}/state/main only from manual-save mode.
-// 4. Block old /users profile mapping writes.
-// 5. Restrict member/presence writes.
-// 6. Restrict family document updates and protect createdBy.
-// 7. Block arbitrary state documents such as state/anything-other-than-main.
+window.FAMILY_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyC8Gxj34tTrZcky0C2SJ_rkbEEAeGJ7mkg",
+  authDomain: "fadlon-family-hub.firebaseapp.com",
+  projectId: "fadlon-family-hub",
+  storageBucket: "fadlon-family-hub.firebasestorage.app",
+  messagingSenderId: "633497042128",
+  appId: "1:633497042128:web:89320ba23532f2eb71f2d5"
+};
 
-service cloud.firestore {
-  match /databases/{database}/documents {
 
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isFixedOwnerEmail() {
-      return signedIn()
-        && request.auth.token.email_verified == true
-        && (
-          request.auth.token.email == "fadlon1980@gmail.com"
-          || request.auth.token.email == "fadlonmay@gmail.com"
-        );
-    }
-
-    function memberPath(familyId) {
-      return /databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid);
-    }
-
-    function memberDoc(familyId) {
-      return get(memberPath(familyId));
-    }
-
-    function isMember(familyId) {
-      return signedIn()
-        && exists(memberPath(familyId));
-    }
-
-    function isOriginalCreator(familyId) {
-      return signedIn()
-        && get(/databases/$(database)/documents/families/$(familyId)).data.createdBy == request.auth.uid;
-    }
-
-    function isRoleOwnerOrAdmin(familyId) {
-      return isMember(familyId)
-        && (
-          memberDoc(familyId).data.role == "owner"
-          || memberDoc(familyId).data.role == "admin"
-        );
-    }
-
-    function isFamilyManager(familyId) {
-      return isFixedOwnerEmail()
-        || isOriginalCreator(familyId)
-        || isRoleOwnerOrAdmin(familyId);
-    }
-
-    function canReadFamily(familyId) {
-      return isFixedOwnerEmail()
-        || isMember(familyId)
-        || isOriginalCreator(familyId);
-    }
-
-    function isExpectedManualStatePayload() {
-      return request.resource.data.keys().hasOnly([
-          "data",
-          "updatedBy",
-          "updatedByEmail",
-          "clientUpdatedAt",
-          "appVersion",
-          "writeMethod",
-          "clientSummary"
-        ])
-        && request.resource.data.keys().hasAll([
-          "data",
-          "updatedBy",
-          "updatedByEmail",
-          "clientUpdatedAt",
-          "appVersion",
-          "writeMethod"
-        ]);
-    }
-
-    function hasSafeClientSummary() {
-      return !("clientSummary" in request.resource.data)
-        || (
-          request.resource.data.clientSummary is map
-          && (
-            !("bytes" in request.resource.data.clientSummary)
-            || request.resource.data.clientSummary.bytes <= 800000
-          )
-        );
-    }
-
-    function isManualStateSave(familyId, docId) {
-      return docId == "main"
-        && signedIn()
-        && canReadFamily(familyId)
-        && isExpectedManualStatePayload()
-        && hasSafeClientSummary()
-
-        // This blocks older app versions and automatic save loops.
-        && request.resource.data.writeMethod == "manual-save-mode"
-
-        // User identity must match the signed-in account.
-        && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedByEmail == request.auth.token.email;
-    }
-
-    match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-
-      // Disabled to prevent old app versions from repeatedly writing
-      // user profile / family mapping documents.
-      allow create, update, delete: if false;
-    }
-
-    match /families/{familyId} {
-      allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid;
-
-      allow read: if canReadFamily(familyId);
-
-      // Managers may update the family document, but cannot change ownership.
-      allow update: if isFamilyManager(familyId)
-        && request.resource.data.createdBy == resource.data.createdBy;
-
-      allow delete: if false;
-
-      match /members/{uid} {
-        allow read: if canReadFamily(familyId)
-          || (signedIn() && request.auth.uid == uid);
-
-        // Joining/repair should be rare. Fixed owners/original creator/invite-code users may create own member record.
-        allow create: if signedIn()
-          && request.auth.uid == uid
-          && (
-            isFixedOwnerEmail()
-            || isOriginalCreator(familyId)
-            || request.resource.data.inviteCode == get(/databases/$(database)/documents/families/$(familyId)).data.inviteCode
-          );
-
-        // Restrict member updates to family managers only, and block noisy presence fields.
-        allow update: if isFamilyManager(familyId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            "email",
-            "displayName",
-            "photoURL",
-            "role",
-            "childName",
-            "updatedAt",
-            "updatedBy",
-            "roleAutoAssigned",
-            "roleAutoAssignedBy"
-          ]);
-
-        allow delete: if isFamilyManager(familyId);
-      }
-
-      match /state/{docId} {
-        allow read: if canReadFamily(familyId);
-
-        // Main protection:
-        // Only the safe manual save payload can write the shared family state.
-        allow create, update: if isManualStateSave(familyId, docId);
-
-        allow delete: if false;
-      }
-    }
-  }
-}
+// Admin emails that can see the admin reset button.
+// Add your Google email and Maayan's Google email here.
+// Keep all emails lowercase.
+window.FAMILY_ADMIN_EMAILS = [
+  // "your-email@gmail.com",
+  // "maayan-email@gmail.com"
+];

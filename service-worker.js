@@ -1,82 +1,88 @@
-const CACHE_NAME = "family-command-center-v4-8-33";
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./firebase-config.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
-];
+# Family Command Center PWA V4.8.34 — Parser Hardening / Quick Capture Fixes
 
-self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
-});
+This version is based on V4.8.33 and implements Phase 3 parser hardening.
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
-      .then(() => self.clients.claim())
-  );
-});
+## What changed
 
-self.addEventListener("message", event => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});
+### Better date parsing
 
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+Quick Capture now supports:
 
-  const url = new URL(event.request.url);
+- `15 May`
+- `May 15`
+- `15th of May`
+- `May 15th`
+- `2026-05-15`
+- `5/15`
+- `tomorrow`
+- `today`
+- weekdays like `Friday`
 
-  // Never cache Firebase / Google API calls.
-  if (
-    url.hostname.includes("googleapis.com") ||
-    url.hostname.includes("firebaseio.com") ||
-    url.hostname.includes("firestore.googleapis.com") ||
-    url.hostname.includes("identitytoolkit.googleapis.com") ||
-    url.hostname.includes("securetoken.googleapis.com")
-  ) {
-    return;
-  }
+### Safer time parsing
 
-  // Network-first for navigation and HTML so old write-loop app versions do not stay alive.
-  if (event.request.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith("/")) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request).then(cached => cached || caches.match("./index.html")))
-    );
-    return;
-  }
+The app no longer treats random numbers as times.
 
-  // Stale-while-revalidate for static app assets.
-  event.respondWith(
-    caches.open(CACHE_NAME).then(cache =>
-      cache.match(event.request).then(cached => {
-        const networkFetch = fetch(event.request)
-          .then(response => {
-            if (response && response.ok) cache.put(event.request, response.clone());
-            return response;
-          })
-          .catch(() => null);
+Examples that should **not** become a time:
 
-        return cached || networkFetch || caches.match("./index.html");
-      })
-    )
-  );
-});
+- `$260`
+- `Kid 2`
+- `Buy 5 bags`
+
+Examples that should become a time:
+
+- `3pm`
+- `3:30pm`
+- `10:00`
+
+### Better amount parsing
+
+The app now prefers currency/amount signals such as:
+
+- `$260`
+- `260 dollars`
+- `260 USD`
+- `tuition 260`
+
+This avoids reading the `15` in `15 May` as the payment amount.
+
+### Ambiguous Quick Capture asks
+
+When a prompt can fit more than one bucket, the app asks you to choose.
+
+Example:
+
+```text
+Pay for Hebrew lesson $260 by 15 May for Daniel
+```
+
+Possible choices include:
+
+- Payment + calendar due-date reminder
+- Calendar event
+
+### Payment creates calendar reminder
+
+A future unpaid payment creates:
+
+- one payment
+- one calendar due-date reminder
+
+Paid items do not create future reminders.
+
+## Still included
+
+- V4.8.33 mobile save bar fix
+- V4.8.32 code cleanup
+- V4.8.31 Firestore rules safety
+- V4.8.30 quota-burn fix
+- Manual save mode
+- Global Manual Save Bar
+- No automatic cloud save
+
+## Open after upload
+
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-34
+```
+
+No Firestore rules change is required if V4.8.31 rules are already published.

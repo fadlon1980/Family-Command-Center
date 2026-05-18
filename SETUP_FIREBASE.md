@@ -1,28 +1,82 @@
-# V4.8.33 Setup Notes
+const CACHE_NAME = "family-command-center-v4-8-34";
+const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./firebase-config.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png"
+];
 
-No Firestore rules change is required if V4.8.31 rules are already published.
+self.addEventListener("install", event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
+});
 
-## Upload
+self.addEventListener("activate", event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
+      .then(() => self.clients.claim())
+  );
+});
 
-Upload all files to GitHub Pages.
+self.addEventListener("message", event => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
 
-Open:
+self.addEventListener("fetch", event => {
+  if (event.request.method !== "GET") return;
 
-```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-33
-```
+  const url = new URL(event.request.url);
 
-Use hard refresh once:
+  // Never cache Firebase / Google API calls.
+  if (
+    url.hostname.includes("googleapis.com") ||
+    url.hostname.includes("firebaseio.com") ||
+    url.hostname.includes("firestore.googleapis.com") ||
+    url.hostname.includes("identitytoolkit.googleapis.com") ||
+    url.hostname.includes("securetoken.googleapis.com")
+  ) {
+    return;
+  }
 
-```text
-Ctrl + Shift + R
-```
+  // Network-first for navigation and HTML so old write-loop app versions do not stay alive.
+  if (event.request.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith("/")) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then(cached => cached || caches.match("./index.html")))
+    );
+    return;
+  }
 
-## Phone QC
+  // Stale-while-revalidate for static app assets.
+  event.respondWith(
+    caches.open(CACHE_NAME).then(cache =>
+      cache.match(event.request).then(cached => {
+        const networkFetch = fetch(event.request)
+          .then(response => {
+            if (response && response.ok) cache.put(event.request, response.clone());
+            return response;
+          })
+          .catch(() => null);
 
-1. Open the app on your phone.
-2. Confirm bottom tabs are visible and clickable.
-3. Confirm the global save bar appears above the tabs.
-4. Try clicking each bottom tab.
-5. Add a local item and confirm the save bar still works.
-6. Click Save to cloud only when you want to manually save.
+        return cached || networkFetch || caches.match("./index.html");
+      })
+    )
+  );
+});
