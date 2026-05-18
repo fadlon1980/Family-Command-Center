@@ -63,9 +63,19 @@ function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+
+function parseIsoLocal(isoDate) {
+  const match = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return new Date(isoDate);
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
+
+
+function todayIso() {
+  // V4.8.39: use the browser/phone local date.
+  return isoFromDate(new Date());
+}
+
 
 function dateFromIso(iso) {
   if (!iso) return null;
@@ -74,14 +84,23 @@ function dateFromIso(iso) {
 }
 
 function isoFromDate(date) {
-  return date.toISOString().slice(0, 10);
+  // V4.8.39: local date, not UTC.
+  // Do not use toISOString().slice(0, 10), because it can shift one day in some time zones.
+  const localDate = new Date(date);
+  const year = localDate.getFullYear();
+  const month = String(localDate.getMonth() + 1).padStart(2, "0");
+  const day = String(localDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function addDays(value, days) {
-  const d = value instanceof Date ? new Date(value) : dateFromIso(value) || new Date();
-  d.setDate(d.getDate() + days);
-  return isoFromDate(d);
+
+function addDays(iso, days) {
+  // V4.8.39: local date math.
+  const date = parseIsoLocal(iso);
+  date.setDate(date.getDate() + days);
+  return isoFromDate(date);
 }
+
 
 function daysBetween(fromIso, toIso) {
   const from = dateFromIso(fromIso);
@@ -857,13 +876,15 @@ function extractDate(text) {
 
 
 function nextWeekday(targetDay) {
-  const d = new Date();
-  const current = d.getDay();
-  let diff = (targetDay + 7 - current) % 7;
-  if (diff === 0) diff = 7;
-  d.setDate(d.getDate() + diff);
-  return isoFromDate(d);
+  // V4.8.39: local date math.
+  const date = parseIsoLocal(todayIso());
+  const currentDay = date.getDay();
+  let diff = targetDay - currentDay;
+  if (diff <= 0) diff += 7;
+  date.setDate(date.getDate() + diff);
+  return isoFromDate(date);
 }
+
 
 function extractTime(text) {
   const source = String(text || "");
@@ -904,7 +925,9 @@ function extractAmount(text) {
   const currencyBefore = source.match(/(?:\$|usd\s*|dollars?\s*|₪)\s*([0-9]+(?:[.,][0-9]{1,2})?)/i);
   if (currencyBefore) return Number(String(currencyBefore[1]).replace(",", "."));
 
-  const currencyAfter = source.match(/\b([0-9]+(?:[.,][0-9]{1,2})?)\s*(?:usd|dollars?|\$|₪)\b/i);
+  // V4.8.38: support amount before currency, like "260$" or "260 $".
+  // Do not require a word boundary after "$", because "$" is not a word character.
+  const currencyAfter = source.match(/(?:^|[^\w])([0-9]+(?:[.,][0-9]{1,2})?)\s*(?:usd|dollars?|\$|₪)(?=$|[^\w])/i);
   if (currencyAfter) return Number(String(currencyAfter[1]).replace(",", "."));
 
   const amountWord = source.match(/\b(?:amount|cost|fee|price|tuition)\s*[:=]?\s*([0-9]+(?:[.,][0-9]{1,2})?)\b/i);
@@ -912,6 +935,7 @@ function extractAmount(text) {
 
   return 0;
 }
+
 
 
 
@@ -1006,12 +1030,20 @@ function chooseQuickCaptureType(text, signals) {
 function cleanPaymentCaptureName(text) {
   let result = String(text || "").trim();
 
-  result = result.replace(/^(pay|paid|payment)\s+(for\s+)?/i, "");
+  // Remove leading action word.
+  result = result.replace(/^(pay|paid|payment)\s+/i, "");
 
-  // Remove currency/amount.
+  // V4.8.38: if sentence starts "for Daniel Hebrew lesson", treat Daniel as child
+  // and keep Hebrew lesson as the payment name.
+  result = result.replace(/^for\s+[A-Za-z][A-Za-z'-]*\s+/i, "");
+
+  // V4.8.38: also support "from Daniel Hebrew lesson".
+  result = result.replace(/^from\s+[A-Za-z][A-Za-z'-]*\s+/i, "");
+
+  // Remove currency/amount, including "$260", "260$", and "260 $".
   result = result
     .replace(/(?:\$|usd\s*|dollars?\s*|₪)\s*[0-9]+(?:[.,][0-9]{1,2})?/gi, "")
-    .replace(/\b[0-9]+(?:[.,][0-9]{1,2})?\s*(?:usd|dollars?|\$|₪)\b/gi, "")
+    .replace(/(?:^|[^\w])([0-9]+(?:[.,][0-9]{1,2})?)\s*(?:usd|dollars?|\$|₪)(?=$|[^\w])/gi, " ")
     .replace(/\b(?:amount|cost|fee|price|tuition)\s*[:=]?\s*[0-9]+(?:[.,][0-9]{1,2})?\b/gi, "");
 
   // Remove due-date phrase.
@@ -1023,11 +1055,12 @@ function cleanPaymentCaptureName(text) {
     .replace(/\bby\s+20\d{2}-\d{1,2}-\d{1,2}\b/gi, "")
     .replace(/\bby\s+\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/gi, "");
 
-  // Remove only the trailing child/person phrase, not text like "for Hebrew lesson".
+  // Remove only trailing child/person phrase. This preserves "Hebrew lesson".
   result = result.replace(/\s+for\s+[A-Za-z][A-Za-z'-]*\s*$/i, "");
 
   return result.replace(/\s+/g, " ").trim() || String(text || "").trim();
 }
+
 
 function inferQuickType(text, requestedType) {
   if (requestedType !== "auto") return requestedType;
@@ -3456,7 +3489,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.37";
+const APP_VERSION = "4.8.39";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -4396,7 +4429,35 @@ function v48KidName(){
 }
 function v48ShowFeedback(msg){const el=document.getElementById("assistantFeedback"); if(!el)return; el.textContent=msg; el.classList.remove("hidden"); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.add("hidden"),5500)}
 function v48Items(v){return Array.isArray(v)?v.map(x=>String(x).trim()).filter(Boolean):String(v||"").split(",").map(x=>x.trim()).filter(Boolean)}
-function v48ChildFromText(text){const l=text.toLowerCase(); return (state.settings.children||[]).find(n=>l.includes(String(n).toLowerCase())) || (v48IsKid()?v48KidName():"All family")}
+function v48ChildFromText(text){
+  const source = String(text || "");
+
+  const kids = [...new Set([
+    ...(state.settings?.children || []),
+    ...state.roleRules.filter(r => r.childName).map(r => r.childName)
+  ].filter(Boolean))];
+
+  // Prefer known children anywhere in the sentence.
+  for (const kid of kids) {
+    const escaped = String(kid).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`\\b${escaped}\\b`, "i").test(source)) return kid;
+  }
+
+  // V4.8.38: support "pay for Daniel Hebrew lesson..."
+  const payForMatch = source.match(/^\s*(?:pay|paid|payment)\s+for\s+([A-Za-z][A-Za-z'-]*)\b/i);
+  if (payForMatch) return payForMatch[1];
+
+  // Support "pay from Daniel Hebrew lesson..."
+  const fromMatch = source.match(/\bfrom\s+([A-Za-z][A-Za-z'-]*)\b/i);
+  if (fromMatch) return fromMatch[1];
+
+  // Support trailing "for Daniel", but avoid interpreting "for Hebrew" in "pay for Hebrew lesson".
+  const trailingFor = source.match(/\bfor\s+([A-Za-z][A-Za-z'-]*)\s*$/i);
+  if (trailingFor) return trailingFor[1];
+
+  return "";
+}
+
 function v48Smart(text, requested){const lower=text.toLowerCase(); let type=requested==="auto"?(typeof inferQuickType==="function"?inferQuickType(text,requested):"task"):requested; if(requested==="auto"){ if(lower.includes("chore")||lower.includes("allowance")||lower.startsWith("clean ")||lower.startsWith("empty "))type="chore"; if(lower.includes("checklist")||lower.includes("equipment")||lower.includes("bring:")||lower.includes("pack list"))type="checklist"; if(lower.includes("remind ")||lower.startsWith("reminder"))type="reminder";} return {type,date:extractDate(text),amount:extractAmount(text),child:v48ChildFromText(text)}}
 function v48DigestItem(item){const badge=item.type==="Conflict"?"conflict":item.type==="Chore"?"chore":item.type==="Prep"?"reminder":"";return `<div class="item"><div class="item-main"><div class="item-title">${escapeHtml(item.title)}</div><div class="item-meta"><span class="badge ${badge}">${escapeHtml(item.type)}</span><span class="badge">${escapeHtml(item.meta||"")}</span></div></div></div>`}
 function v48RenderDailyDigest(){v48EnsureArrays(); const today=todayIso(),tomorrow=addDays(today,1),weekEnd=addDays(today,7),items=[]; (state.tasks||[]).filter(t=>!t.done&&t.due&&t.due<=today).slice(0,3).forEach(t=>items.push({title:`Task due: ${t.title}`,meta:`${t.owner||"Both"} · ${t.category||"Task"}`,type:"Task"})); (state.schoolItems||[]).filter(s=>s.status!=="Done"&&s.due&&s.due<=weekEnd).slice(0,4).forEach(s=>items.push({title:`${s.type}: ${s.title}`,meta:`${s.child||"Child"} · ${s.subject||"School"} · ${formatDate(s.due)}`,type:"School"})); if(v48IsParent())(state.payments||[]).filter(p=>p.status!=="Paid"&&p.due&&p.due<=weekEnd).slice(0,3).forEach(p=>items.push({title:`Payment due: ${p.name} — ${money(p.amount)}`,meta:`${formatDate(p.due)} · ${p.category}`,type:"Payments"})); (state.prepItems||[]).filter(p=>!p.done&&p.date&&p.date<=tomorrow).slice(0,3).forEach(p=>items.push({title:`Prep: ${p.text}`,meta:`${p.owner||"Both"} · ${formatDate(p.date)}`,type:"Prep"})); (state.chores||[]).filter(c=>c.status!=="Done"&&c.due&&c.due<=today).slice(0,3).forEach(c=>{if(v48IsParent()||c.child===v48KidName())items.push({title:`Chore: ${c.title}`,meta:`${c.child} · ${formatDate(c.due)}${Number(c.allowance)?` · ${money(c.allowance)}`:""}`,type:"Chore"})}); v48GetConflicts().slice(0,2).forEach(c=>items.push({title:`Conflict: ${c.title}`,meta:c.meta,type:"Conflict"})); renderList("dailyDigestList",items,v48DigestItem,"No urgent digest items right now.")}

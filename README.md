@@ -1,58 +1,59 @@
-# Family Command Center PWA V4.8.37 — Manual Save Conflict Detection
+# Family Command Center PWA V4.8.39 — Local Date Calculation Fix
 
-This version is based on V4.8.36 and adds conflict detection before manual cloud save.
+This version is based on V4.8.38.
 
-## Why this matters
+## What was fixed
 
-The app stores the family state in one shared Firestore document:
-
-```text
-families/{familyId}/state/main
-```
-
-If two devices both make local changes and both save, the second save can overwrite the first.
-
-## What changed
-
-### Pull latest now stores cloud version
-
-When you click **Pull latest**, the app stores the cloud document's `clientUpdatedAt` value in localStorage.
-
-### Save to cloud checks for conflicts
-
-Before saving, the app reads `state/main` metadata and compares:
-
-- current cloud `clientUpdatedAt`
-- this device's last pulled/saved cloud version
-
-If cloud is newer, the app warns:
+If the phone/browser date is:
 
 ```text
-Someone else may have saved newer cloud changes.
-Saving now may overwrite their changes.
+05/17/2026
 ```
 
-You can then:
+then:
 
-- Cancel and Pull latest first
-- Or continue and save anyway
+```text
+tomorrow
+```
 
-### Successful save updates the local version marker
+should become:
 
-After a successful save, the app stores the new `clientUpdatedAt` as the last known cloud version.
+```text
+05/18/2026
+```
 
-## Still manual only
+Some earlier date utilities may have used UTC date behavior through `toISOString()`, which can shift the date by one day depending on time zone and time of day.
 
-This version does not add auto-save.
+## V4.8.39 changes
 
-Still included:
+- `todayIso()` now uses the browser/phone local date.
+- `isoFromDate()` now formats local year/month/day.
+- `addDays()` now uses local date math.
+- `nextWeekday()` now uses local date math.
+- Quick Capture date parsing now relies on local-date helpers.
 
+## Test
+
+With phone/browser date showing 05/17/2026:
+
+```text
+pay for Daniel Hebrew lesson 260$ by tomorrow
+```
+
+Expected after choosing Payment:
+
+- payment name = Hebrew lesson
+- owner / child = Daniel
+- amount = 260
+- due date = 05/18/2026
+- calendar reminder date = 05/18/2026
+
+## Still included
+
+- V4.8.38 natural payment wording and `260$` fix
+- V4.8.37 conflict detection
 - V4.8.36 Edit buttons
-- V4.8.35 active Quick Capture parser fix
-- V4.8.33 mobile save bar fix
-- V4.8.32 cleanup
 - V4.8.31 rules and service worker safety
-- V4.8.30 quota-burn fix
 - Manual save mode
 - Global Manual Save Bar
 - No automatic cloud save
@@ -60,7 +61,7 @@ Still included:
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-37
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-39
 ```
 
 No Firestore rules change is required if V4.8.31 rules are already published.

@@ -1,4 +1,4 @@
-# V4.8.37 Setup Notes
+# V4.8.39 Setup Notes
 
 No Firestore rules change is required if V4.8.31 rules are already published.
 
@@ -9,7 +9,7 @@ Upload all files to GitHub Pages.
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-37
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-39
 ```
 
 Use hard refresh once:
@@ -18,22 +18,30 @@ Use hard refresh once:
 Ctrl + Shift + R
 ```
 
-## Basic QC
+## QC
 
-1. Click Pull latest.
-2. Make one local change.
-3. Click Save to cloud.
-4. Confirm save succeeds.
-5. Run diagnostics and confirm it shows a last known cloud version.
+Confirm phone/browser date is 05/17/2026.
 
-## Conflict QC with two devices
+Quick Capture:
 
-1. Device A: Pull latest.
-2. Device B: Pull latest.
-3. Device A: Add item A, Save to cloud.
-4. Device B: Add item B, click Save to cloud.
+```text
+pay for Daniel Hebrew lesson 260$ by tomorrow
+```
 
 Expected:
-- Device B should show a conflict warning.
-- Cancel should stop the save.
-- Pull latest should load item A.
+
+- Bucket prompt appears
+- Choose Payment
+- Payment name = Hebrew lesson
+- Owner / child = Daniel
+- Amount = 260
+- Due date = 05/18/2026
+- Calendar reminder date = 05/18/2026
+
+Then test:
+
+```text
+pay from Daniel Hebrew lesson 260$ by tomorrow
+```
+
+Expected: same result.
