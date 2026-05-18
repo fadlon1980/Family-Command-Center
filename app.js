@@ -1690,6 +1690,7 @@ function renderTaskItem(task) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleTask" data-id="${task.id}">${task.done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="editTask" data-id="${task.id}">Edit</button>
         <button class="icon-btn" data-action="deleteTask" data-id="${task.id}">Delete</button>
       </div>
     </div>
@@ -1709,6 +1710,7 @@ function renderEventItem(event) {
         </div>
       </div>
       <div class="item-actions">
+        <button class="icon-btn" data-action="editEvent" data-id="${event.id}">Edit</button>
         <button class="icon-btn" data-action="taskFromEvent" data-id="${event.id}">Prep task</button>
         <button class="icon-btn" data-action="deleteEvent" data-id="${event.id}">Delete</button>
       </div>
@@ -1736,6 +1738,7 @@ function renderSchoolItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleSchool" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="editSchool" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="schoolToPrep" data-id="${item.id}">Prep</button>
         <button class="icon-btn" data-action="deleteSchool" data-id="${item.id}">Delete</button>
       </div>
@@ -1760,6 +1763,7 @@ function renderPaymentItem(payment) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="togglePayment" data-id="${payment.id}">${paid ? "Reopen" : "Paid"}</button>
+        <button class="icon-btn" data-action="editPayment" data-id="${payment.id}">Edit</button>
         <button class="icon-btn" data-action="deletePayment" data-id="${payment.id}">Delete</button>
       </div>
     </div>
@@ -1778,6 +1782,7 @@ function renderShoppingItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleShopping" data-id="${item.id}">${item.done ? "Reopen" : "Bought"}</button>
+        <button class="icon-btn" data-action="editShopping" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deleteShopping" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1816,6 +1821,7 @@ function renderPrepItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="togglePrep" data-id="${item.id}">${item.done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="editPrep" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deletePrep" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1838,6 +1844,7 @@ function renderDecisionItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleDecision" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="editDecision" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deleteDecision" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1860,6 +1867,7 @@ function renderAdminItem(item) {
       </div>
       <div class="item-actions">
         <button class="icon-btn" data-action="toggleAdmin" data-id="${item.id}">${done ? "Reopen" : "Done"}</button>
+        <button class="icon-btn" data-action="editAdmin" data-id="${item.id}">Edit</button>
         <button class="icon-btn" data-action="deleteAdmin" data-id="${item.id}">Delete</button>
       </div>
     </div>
@@ -1948,8 +1956,166 @@ document.addEventListener("click", event => {
   handleAction(actionButton.dataset);
 });
 
+
+/* ===== V4.8.36 Restore Edit Buttons ===== */
+function editPromptValue(label, currentValue = "") {
+  const result = prompt(label, currentValue ?? "");
+  if (result === null) return currentValue ?? "";
+  return String(result).trim();
+}
+
+function editPromptNumberValue(label, currentValue = 0) {
+  const result = prompt(label, currentValue === undefined || currentValue === null ? "" : String(currentValue));
+  if (result === null) return Number(currentValue || 0);
+  const cleaned = String(result).trim().replace("$", "").replace(",", ".");
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : Number(currentValue || 0);
+}
+
+function editPromptDateValue(label, currentValue = "") {
+  const result = prompt(`${label} (YYYY-MM-DD, or text like 15 May)`, currentValue || "");
+  if (result === null) return currentValue || "";
+  const cleaned = String(result).trim();
+  if (!cleaned) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return cleaned;
+  return extractDate(cleaned) || cleaned;
+}
+
+function editPromptChoiceValue(label, currentValue = "", choices = []) {
+  const result = prompt(`${label}${choices.length ? ` (${choices.join(" / ")})` : ""}`, currentValue || "");
+  if (result === null) return currentValue || "";
+  const cleaned = String(result).trim();
+  if (!choices.length) return cleaned;
+  return choices.find(choice => choice.toLowerCase() === cleaned.toLowerCase()) || cleaned || currentValue || "";
+}
+
+function updateLinkedPaymentEventsAfterEdit(oldName, oldDue, payment) {
+  const candidates = state.events.filter(event => {
+    const title = String(event.title || "");
+    const notes = String(event.notes || "");
+    return title.includes(oldName)
+      || notes.includes(oldName)
+      || (title.startsWith("Payment due:") && oldDue && event.date === oldDue);
+  });
+
+  if (!candidates.length) return;
+
+  const shouldUpdate = confirm(`Update ${candidates.length} linked calendar reminder(s) for this payment too?`);
+  if (!shouldUpdate) return;
+
+  candidates.forEach(event => {
+    event.title = `Payment due: ${payment.name}`;
+    event.date = payment.due || event.date;
+    event.person = payment.owner || event.person || "Both";
+    event.notes = "Auto-updated from payment edit";
+  });
+}
+
+function editTaskItem(id) {
+  const item = state.tasks.find(t => t.id === id);
+  if (!item) return;
+  item.title = editPromptValue("Task title", item.title);
+  item.owner = editPromptValue("Owner / child", item.owner || "Both");
+  item.due = editPromptDateValue("Due date", item.due || "");
+  item.category = editPromptValue("Category", item.category || "Other");
+  item.priority = editPromptChoiceValue("Priority", item.priority || "Normal", ["Low", "Normal", "High"]);
+}
+
+function editEventItem(id) {
+  const item = state.events.find(e => e.id === id);
+  if (!item) return;
+  item.title = editPromptValue("Calendar title", item.title);
+  item.person = editPromptValue("Person / child", item.person || "All family");
+  item.date = editPromptDateValue("Date", item.date || todayIso());
+  item.time = editPromptValue("Time (HH:MM or blank)", item.time || "");
+  item.location = editPromptValue("Location", item.location || "");
+  item.notes = editPromptValue("Notes", item.notes || "");
+}
+
+function editPaymentItem(id) {
+  const item = state.payments.find(p => p.id === id);
+  if (!item) return;
+
+  const oldName = item.name || "";
+  const oldDue = item.due || "";
+
+  item.name = editPromptValue("Payment name", item.name || "");
+  item.amount = editPromptNumberValue("Amount", item.amount || 0);
+  item.due = editPromptDateValue("Due date", item.due || todayIso());
+  item.category = editPromptValue("Category", item.category || "Other");
+  item.owner = editPromptValue("Owner / child", item.owner || "Both");
+  item.frequency = editPromptChoiceValue("Frequency", item.frequency || "One-time", ["One-time", "Weekly", "Monthly", "Yearly"]);
+  item.method = editPromptValue("Payment method", item.method || "Credit card");
+  item.status = editPromptChoiceValue("Status", item.status || "Upcoming", ["Upcoming", "Paid", "Overdue"]);
+  item.paidDate = item.status === "Paid" ? editPromptDateValue("Paid date", item.paidDate || todayIso()) : "";
+  item.notes = editPromptValue("Notes", item.notes || "");
+
+  updateLinkedPaymentEventsAfterEdit(oldName, oldDue, item);
+}
+
+function editSchoolItem(id) {
+  const item = state.schoolItems.find(s => s.id === id);
+  if (!item) return;
+  item.title = editPromptValue("School item title", item.title);
+  item.child = editPromptValue("Child", item.child || "");
+  item.type = editPromptChoiceValue("Type", item.type || "School", ["School", "Homework", "Exam", "Test", "Quiz", "Project", "Reading"]);
+  item.subject = editPromptValue("Subject", item.subject || "");
+  item.due = editPromptDateValue("Due date", item.due || todayIso());
+  item.priority = editPromptChoiceValue("Priority", item.priority || "Normal", ["Low", "Normal", "High"]);
+  item.status = editPromptChoiceValue("Status", item.status || "Open", ["Open", "Done"]);
+  item.notes = editPromptValue("Notes", item.notes || "");
+}
+
+function editShoppingItem(id) {
+  const item = state.shopping.find(s => s.id === id);
+  if (!item) return;
+  item.name = editPromptValue("Shopping item", item.name);
+  item.store = editPromptValue("Store / category", item.store || "Grocery");
+}
+
+function editPrepItem(id) {
+  const item = state.prepItems.find(p => p.id === id);
+  if (!item) return;
+  item.text = editPromptValue("Prep item", item.text);
+  item.owner = editPromptValue("Owner / child", item.owner || "Both");
+  item.date = editPromptDateValue("Date", item.date || "");
+}
+
+function editDecisionItem(id) {
+  const item = state.decisions.find(d => d.id === id);
+  if (!item) return;
+  item.title = editPromptValue("Decision title", item.title);
+  item.owner = editPromptValue("Owner", item.owner || "Both");
+  item.due = editPromptDateValue("Due date", item.due || "");
+  item.options = editPromptValue("Options / notes", item.options || "");
+  item.status = editPromptChoiceValue("Status", item.status || "Open", ["Open", "Done"]);
+}
+
+function editAdminItem(id) {
+  const item = state.adminItems.find(a => a.id === id);
+  if (!item) return;
+  item.title = editPromptValue("Admin item title", item.title);
+  item.category = editPromptValue("Category", item.category || "Other");
+  item.owner = editPromptValue("Owner / child", item.owner || "Both");
+  item.due = editPromptDateValue("Due date", item.due || "");
+  item.status = editPromptChoiceValue("Status", item.status || "Open", ["Open", "Done"]);
+  item.notes = editPromptValue("Notes", item.notes || "");
+}
+/* ===== End V4.8.36 Restore Edit Buttons ===== */
+
+
 function handleAction(dataset) {
   const { action, id, routine } = dataset;
+
+  if (action === "editTask") editTaskItem(id);
+  if (action === "editEvent") editEventItem(id);
+  if (action === "editPayment") editPaymentItem(id);
+  if (action === "editSchool") editSchoolItem(id);
+  if (action === "editShopping") editShoppingItem(id);
+  if (action === "editPrep") editPrepItem(id);
+  if (action === "editDecision") editDecisionItem(id);
+  if (action === "editAdmin") editAdminItem(id);
+
 
   if (action === "toggleTask") {
     const task = state.tasks.find(t => t.id === id);
@@ -3162,7 +3328,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.35";
+const APP_VERSION = "4.8.36";
 const diagnostics = {
   entries: [],
   maxEntries: 30
