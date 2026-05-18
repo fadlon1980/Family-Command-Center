@@ -2962,7 +2962,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.32";
+const APP_VERSION = "4.8.33";
 const diagnostics = {
   entries: [],
   maxEntries: 30

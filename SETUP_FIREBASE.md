@@ -1,4 +1,4 @@
-# V4.8.32 Setup Notes
+# V4.8.33 Setup Notes
 
 No Firestore rules change is required if V4.8.31 rules are already published.
 
@@ -9,7 +9,7 @@ Upload all files to GitHub Pages.
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-32
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-33
 ```
 
 Use hard refresh once:
@@ -18,15 +18,11 @@ Use hard refresh once:
 Ctrl + Shift + R
 ```
 
-## Test
+## Phone QC
 
-1. Confirm app version is 4.8.32 in diagnostics.
-2. Leave app idle for 5 minutes, writes should stay flat.
-3. Click each main button once and confirm it only runs once:
-   - Pull latest
-   - Save to cloud
-   - Run diagnostics
-   - Quick Capture
-4. Create one item, confirm pending local changes appears.
-5. Save to cloud once, confirm one state/main update.
-6. Refresh, confirm data remains.
+1. Open the app on your phone.
+2. Confirm bottom tabs are visible and clickable.
+3. Confirm the global save bar appears above the tabs.
+4. Try clicking each bottom tab.
+5. Add a local item and confirm the save bar still works.
+6. Click Save to cloud only when you want to manually save.

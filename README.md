@@ -1,29 +1,19 @@
-# Family Command Center PWA V4.8.32 — Code Cleanup / Remove Duplicate Listeners
+# Family Command Center PWA V4.8.33 — Mobile Save Bar Layout Fix
 
-This version is based on V4.8.31 and focuses only on cleanup. It does not change the Firestore data model, manual save rules, or sync behavior.
+This version is based on V4.8.32 and fixes the phone layout issue where the global manual save bar covered the bottom navigation tabs.
 
 ## What changed
 
-### Removed duplicate / dead listeners
+On screens up to 820px wide:
 
-- Removed dead original Quick Capture submit handler.
-- Kept the active V4.8 smart Quick Capture handler.
-- Removed standalone auth/calendar backup delegation calls.
-- Removed duplicate cloud recovery / diagnostics wiring outside the load handler.
-- Removed early standalone `render()` call.
-- Removed keyword-specific `unhandledrejection` listeners.
-- Kept the generic diagnostic `unhandledrejection` listener.
-
-### Added wiring guards
-
-Added idempotent guards to key wiring functions so if a function is accidentally called twice, it will not attach duplicate click handlers.
-
-### Fixed reset behavior under manual save mode
-
-`resetSharedFamilyData()` now calls `manualSaveLocalChangesToCloud()` instead of the disabled automatic `saveCloudNow()` path.
+- The global save bar now sits above the bottom tabs.
+- The bottom tabs remain clickable.
+- Extra bottom padding was added so page content is not hidden behind the fixed bars.
+- The save bar is more compact on small phones.
 
 ## Still included
 
+- V4.8.32 code cleanup
 - V4.8.31 Firestore rules safety
 - V4.8.31 service worker safety
 - V4.8.30 Phase 1 quota-burn fix
@@ -35,7 +25,7 @@ Added idempotent guards to key wiring functions so if a function is accidentally
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-32
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-33
 ```
 
 ## Firestore rules
