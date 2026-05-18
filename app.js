@@ -492,6 +492,8 @@ function renderGlobalSaveBarStatus() {
 }
 
 function wireGlobalManualSaveBar() {
+  if (window.__fccGlobalManualSaveBarWired) return; window.__fccGlobalManualSaveBarWired = true;
+
   document.getElementById("globalSaveToCloudBtn")?.addEventListener("click", async () => {
     const btn = document.getElementById("globalSaveToCloudBtn");
     const original = btn?.textContent || "Save to cloud";
@@ -534,6 +536,8 @@ function wireGlobalManualSaveBar() {
 
 
 function wireManualSaveControls() {
+  if (window.__fccManualSaveControlsWired) return; window.__fccManualSaveControlsWired = true;
+
   document.getElementById("manualSaveToCloudBtn")?.addEventListener("click", manualSaveLocalChangesToCloud);
   document.getElementById("pullLatestManualBtn")?.addEventListener("click", pullLatestManualFromCloud);
   document.getElementById("clearPendingManualBtn")?.addEventListener("click", clearPendingManualFlag);
@@ -1855,70 +1859,7 @@ function convertInbox(id, target) {
   state.inbox = state.inbox.filter(i => i.id !== id);
 }
 
-document.getElementById("quickForm").addEventListener("submit", event => {
-  event.preventDefault();
-  const text = document.getElementById("quickText").value.trim();
-  const requested = document.getElementById("quickType").value;
-  if (!text) return;
-
-  const type = inferQuickType(text, requested);
-  const date = extractDate(text);
-
-  if (type === "shopping") {
-    const cleaned = text.replace(/^(buy|shopping)\s*:?/i, "").trim();
-    cleaned.split(",").map(x => x.trim()).filter(Boolean).forEach(name => {
-      state.shopping.push({ id: uid(), name, store: "Grocery", done: false, createdAt: Date.now() });
-    });
-  } else if (type === "schoolwork") {
-    const lower = text.toLowerCase();
-    const child = state.settings.children.find(name => lower.includes(name.toLowerCase())) || "All family";
-    const itemType = lower.includes("exam") ? "Exam" : lower.includes("test") ? "Test" : lower.includes("quiz") ? "Quiz" : lower.includes("project") ? "Project" : lower.includes("reading") ? "Reading" : "School";
-    state.schoolItems.push({
-      id: uid(),
-      title: text,
-      child,
-      type: itemType,
-      subject: "",
-      due: date || todayIso(),
-      priority: ["Exam", "Test", "Quiz"].includes(itemType) ? "High" : "Normal",
-      status: "Open",
-      notes: "Added from quick capture",
-      createdAt: Date.now()
-    });
-  } else if (type === "payment") {
-    const paid = text.toLowerCase().startsWith("paid ");
-    state.payments.push({
-      id: uid(),
-      name: text.replace(/^(pay|paid)\s+/i, "").replace(/\$?\s?\d+(?:\.\d{1,2})?/, "").trim() || text,
-      amount: extractAmount(text),
-      due: paid ? date || todayIso() : date || todayIso(),
-      category: "Other",
-      owner: "Both",
-      frequency: "One-time",
-      method: "Credit card",
-      status: paid ? "Paid" : "Upcoming",
-      paidDate: paid ? todayIso() : "",
-      notes: "Added from quick capture",
-      createdAt: Date.now()
-    });
-  } else if (type === "prep") {
-    state.prepItems.push({ id: uid(), text, owner: "Both", date: date || addDays(todayIso(), 1), done: false, createdAt: Date.now() });
-  } else if (type === "decision") {
-    state.decisions.push({ id: uid(), title: text.replace(/^decision\s*:?/i, "").trim(), owner: "Both", due: date, options: "", status: "Open", createdAt: Date.now() });
-  } else if (type === "admin") {
-    state.adminItems.push({ id: uid(), title: text, category: "Other", owner: "Both", due: date, notes: "Added from quick capture", status: "Open", createdAt: Date.now() });
-  } else if (type === "event") {
-    state.events.push({ id: uid(), title: text, person: "All family", date: date || todayIso(), time: extractTime(text), location: "", notes: "Added from quick capture", createdAt: Date.now() });
-  } else if (type === "inbox") {
-    state.inbox.push({ id: uid(), text, type: "Unsorted", createdAt: Date.now() });
-  } else {
-    state.tasks.push({ id: uid(), title: text, owner: "Both", due: date, category: "Other", priority: "Normal", done: false, createdAt: Date.now() });
-  }
-
-  document.getElementById("quickText").value = "";
-  saveState();
-  render();
-});
+/* V4.8.32 cleanup: removed dead original quickForm submit handler. Active quick capture handler remains below. */
 
 document.getElementById("taskForm").addEventListener("submit", event => {
   event.preventDefault();
@@ -2502,20 +2443,15 @@ async function resetSharedFamilyData() {
     return;
   }
 
-  if (!cloud.ready || !cloud.stateRef || !cloud.user) {
-    alert("Cloud sync must be active before resetting shared data.");
-    return;
-  }
-
   const backupFirst = confirm(
-    "This will clear shared tasks, homework, payments, shopping, planning items, events, and routines for the whole family.\\n\\n" +
-    "Before resetting, it is recommended to click Export backup.\\n\\n" +
+    "This will clear shared tasks, school items, payments, shopping, planning items, events, and routines for the whole family.\n\n" +
+    "Before resetting, it is recommended to click Export backup.\n\n" +
     "Continue?"
   );
 
   if (!backupFirst) return;
 
-  const typed = prompt('Type RESET to confirm clearing the shared family data.');
+  const typed = prompt("Type RESET to confirm clearing the shared family data.");
   if (typed !== "RESET") {
     alert("Reset cancelled.");
     return;
@@ -2523,10 +2459,24 @@ async function resetSharedFamilyData() {
 
   state = createEmptyFamilyState();
   saveState();
-  await saveCloudNow();
   render();
-  alert("Shared family data was reset. Family settings and member access were kept.");
+
+  try {
+    if (typeof manualSaveLocalChangesToCloud === "function") {
+      await manualSaveLocalChangesToCloud();
+      alert("Shared family data was reset locally and saved to cloud.");
+    } else {
+      alert("Shared family data was reset locally. Use Save to cloud to publish the reset.");
+    }
+  } catch (error) {
+    alert(
+      "Shared family data was reset locally, but cloud save failed: " +
+      (error.message || error) +
+      "\nUse the global Save to cloud button to retry."
+    );
+  }
 }
+
 
 
 function renderCloudPanel() {
@@ -3012,7 +2962,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.31";
+const APP_VERSION = "4.8.32";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3404,6 +3354,8 @@ function clearDiagnostics() {
 }
 
 function wireDiagnosticsControls() {
+  if (window.__fccDiagnosticsControlsWired) return; window.__fccDiagnosticsControlsWired = true;
+
   document.getElementById("runDiagnosticsBtn")?.addEventListener("click", runConnectionDiagnostics);
   document.getElementById("copyDiagnosticsBtn")?.addEventListener("click", copyDiagnosticReport);
   document.getElementById("clearDiagnosticsBtn")?.addEventListener("click", clearDiagnostics);
@@ -3688,14 +3640,7 @@ window.addEventListener("error", event => {
   }
 });
 
-window.addEventListener("unhandledrejection", event => {
-  const msg = event?.reason?.message || String(event?.reason || "");
-  if (/calendar|google|firebase|popup|connectCalendar|permission/i.test(msg)) {
-    calendarButtonDebug(`Calendar error: ${msg}`, "bad");
-  }
-});
-
-
+/* V4.8.32 cleanup: removed calendar-specific unhandledrejection listener. Generic diagnostic listener remains. */
 function wireGoogleCalendarControls() {
   wireCalendarControlsBackupDelegation();
   const connectBtn = document.getElementById("connectCalendarBtn");
@@ -3894,11 +3839,7 @@ wireGlobalManualSaveBar();
   }
 });
 
-
-
-
-wireAuthControlsBackupDelegation();
-wireCalendarControlsBackupDelegation();
+/* V4.8.32 cleanup: standalone auth/calendar backup delegation calls removed. They are wired from the main load path. */
 
 async function forceReconnectFamilySpace() {
   try {
@@ -3926,15 +3867,13 @@ function clearCachedFamilyId() {
 }
 
 function wireCloudRecoveryControls() {
+  if (window.__fccCloudRecoveryControlsWired) return; window.__fccCloudRecoveryControlsWired = true;
+
   document.getElementById("forceReconnectBtn")?.addEventListener("click", forceReconnectFamilySpace);
   document.getElementById("clearFamilyCacheBtn")?.addEventListener("click", clearCachedFamilyId);
 }
 
-
-wireCloudRecoveryControls();
-wireDiagnosticsControls();
-render();
-
+/* V4.8.32 cleanup: duplicate recovery/diagnostics wiring and early render removed. */
 
 /* ===== V4.8 Smart Family Tools Add-on ===== */
 function v48EnsureArrays(){
@@ -4012,14 +3951,7 @@ v48EnsureArrays(); render();
 /* ===== End V4.8 Add-on ===== */
 
 
-window.addEventListener("unhandledrejection", event => {
-  const msg = event?.reason?.message || String(event?.reason || "");
-  if (/auth|firebase|popup|google|login|sign-in/i.test(msg)) {
-    authButtonDebug(`Auth/login error: ${msg}`, "bad");
-  }
-});
-
-
+/* V4.8.32 cleanup: removed auth-specific unhandledrejection listener. Generic diagnostic listener remains. */
 window.addEventListener("error", event => {
   addDiagnostic("Browser JavaScript", event.message || "Unknown JavaScript error", "bad", {
     title: "Browser JavaScript error",
