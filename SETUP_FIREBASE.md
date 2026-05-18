@@ -1,82 +1,54 @@
-const CACHE_NAME = "family-command-center-v4-8-34";
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./firebase-config.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
-];
+# V4.8.34 Setup Notes
 
-self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
-});
+No Firestore rules change is required if V4.8.31 rules are already published.
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)))
-      .then(() => self.clients.claim())
-  );
-});
+## Upload
 
-self.addEventListener("message", event => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});
+Upload all files to GitHub Pages.
 
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+Open:
 
-  const url = new URL(event.request.url);
+```text
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-34
+```
 
-  // Never cache Firebase / Google API calls.
-  if (
-    url.hostname.includes("googleapis.com") ||
-    url.hostname.includes("firebaseio.com") ||
-    url.hostname.includes("firestore.googleapis.com") ||
-    url.hostname.includes("identitytoolkit.googleapis.com") ||
-    url.hostname.includes("securetoken.googleapis.com")
-  ) {
-    return;
-  }
+Use hard refresh once:
 
-  // Network-first for navigation and HTML so old write-loop app versions do not stay alive.
-  if (event.request.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith("/")) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request).then(cached => cached || caches.match("./index.html")))
-    );
-    return;
-  }
+```text
+Ctrl + Shift + R
+```
 
-  // Stale-while-revalidate for static app assets.
-  event.respondWith(
-    caches.open(CACHE_NAME).then(cache =>
-      cache.match(event.request).then(cached => {
-        const networkFetch = fetch(event.request)
-          .then(response => {
-            if (response && response.ok) cache.put(event.request, response.clone());
-            return response;
-          })
-          .catch(() => null);
+## Parser QC
 
-        return cached || networkFetch || caches.match("./index.html");
-      })
-    )
-  );
-});
+Test these Quick Capture examples:
+
+```text
+Pay for Hebrew lesson $260 by 15 May for Daniel
+```
+
+Expected:
+- app asks bucket if ambiguous
+- choose Payment
+- one payment is created
+- one calendar reminder is created
+- amount = 260
+- due date = May 15
+- no time is created from $260
+
+```text
+Daniel Hebrew lesson May 15th 3pm
+```
+
+Expected:
+- event date = May 15
+- event time = 15:00
+
+```text
+Buy 5 bags
+```
+
+Expected:
+- shopping item
+- no time is created
+
+Then click Save to cloud once if you want to publish the changes.
