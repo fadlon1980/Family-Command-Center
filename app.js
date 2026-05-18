@@ -3489,7 +3489,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.39";
+const APP_VERSION = "4.8.40";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -4430,11 +4430,16 @@ function v48KidName(){
 function v48ShowFeedback(msg){const el=document.getElementById("assistantFeedback"); if(!el)return; el.textContent=msg; el.classList.remove("hidden"); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.add("hidden"),5500)}
 function v48Items(v){return Array.isArray(v)?v.map(x=>String(x).trim()).filter(Boolean):String(v||"").split(",").map(x=>x.trim()).filter(Boolean)}
 function v48ChildFromText(text){
+  ensureQuickCaptureState();
+
   const source = String(text || "");
 
+  const roleRules = Array.isArray(state.roleRules) ? state.roleRules : [];
+  const children = Array.isArray(state.settings?.children) ? state.settings.children : [];
+
   const kids = [...new Set([
-    ...(state.settings?.children || []),
-    ...state.roleRules.filter(r => r.childName).map(r => r.childName)
+    ...children,
+    ...roleRules.filter(r => r && r.childName).map(r => r.childName)
   ].filter(Boolean))];
 
   // Prefer known children anywhere in the sentence.
@@ -4443,7 +4448,7 @@ function v48ChildFromText(text){
     if (new RegExp(`\\b${escaped}\\b`, "i").test(source)) return kid;
   }
 
-  // V4.8.38: support "pay for Daniel Hebrew lesson..."
+  // Support "pay for Daniel Hebrew lesson..."
   const payForMatch = source.match(/^\s*(?:pay|paid|payment)\s+for\s+([A-Za-z][A-Za-z'-]*)\b/i);
   if (payForMatch) return payForMatch[1];
 
@@ -4457,6 +4462,7 @@ function v48ChildFromText(text){
 
   return "";
 }
+
 
 function v48Smart(text, requested){const lower=text.toLowerCase(); let type=requested==="auto"?(typeof inferQuickType==="function"?inferQuickType(text,requested):"task"):requested; if(requested==="auto"){ if(lower.includes("chore")||lower.includes("allowance")||lower.startsWith("clean ")||lower.startsWith("empty "))type="chore"; if(lower.includes("checklist")||lower.includes("equipment")||lower.includes("bring:")||lower.includes("pack list"))type="checklist"; if(lower.includes("remind ")||lower.startsWith("reminder"))type="reminder";} return {type,date:extractDate(text),amount:extractAmount(text),child:v48ChildFromText(text)}}
 function v48DigestItem(item){const badge=item.type==="Conflict"?"conflict":item.type==="Chore"?"chore":item.type==="Prep"?"reminder":"";return `<div class="item"><div class="item-main"><div class="item-title">${escapeHtml(item.title)}</div><div class="item-meta"><span class="badge ${badge}">${escapeHtml(item.type)}</span><span class="badge">${escapeHtml(item.meta||"")}</span></div></div></div>`}
@@ -4477,6 +4483,30 @@ async function v48Notify(){if(!("Notification" in window)){alert("This browser d
 function v48Render(){v48EnsureArrays(); ["choreChild","equipmentChild"].forEach(id=>{const el=document.getElementById(id); if(el) setOptions(el, people(), v48IsKid()?v48KidName():"All family")}); v48RenderDailyDigest(); v48RenderConflicts(); v48RenderEquipment(); v48RenderChores(); if(typeof applyRoleBasedView==="function") applyRoleBasedView()}
 const __v48OriginalRender = render;
 render = function(){ __v48OriginalRender(); v48Render(); };
+
+
+
+function ensureQuickCaptureState() {
+  // V4.8.40: Quick Capture may run against older cloud/local data that is missing newer arrays.
+  // Initialize the collections it needs before parsing or pushing records.
+  state.tasks ||= [];
+  state.events ||= [];
+  state.payments ||= [];
+  state.shopping ||= [];
+  state.schoolItems ||= [];
+  state.prepItems ||= [];
+  state.decisions ||= [];
+  state.adminItems ||= [];
+  state.inbox ||= [];
+  state.chores ||= [];
+  state.equipmentChecklists ||= [];
+  state.reminders ||= [];
+  state.kidRequests ||= [];
+  state.roleRules ||= [];
+  state.settings ||= {};
+  state.settings.children ||= [];
+  state.settings.parents ||= [];
+}
 
 
 function quickCaptureResolveTypeForSubmit(text, requestedType) {
@@ -4554,13 +4584,34 @@ function quickCaptureSmartForSubmit(text, type) {
 }
 
 
+
+function quickCaptureParserPreview(text) {
+  ensureQuickCaptureState();
+  return {
+    signals: quickCaptureSignals(text),
+    resolvedTypeIfSingle: quickCaptureSignals(text).length === 1 ? quickCaptureSignals(text)[0] : "ambiguous",
+    date: extractDate(text),
+    amount: extractAmount(text),
+    child: v48ChildFromText(text),
+    paymentName: cleanPaymentCaptureName(text),
+    today: todayIso(),
+    tomorrow: addDays(todayIso(), 1)
+  };
+}
+
+
 document.getElementById("quickForm")?.addEventListener("submit", function(event){
   event.preventDefault();
   event.stopImmediatePropagation();
 
+  // V4.8.40 quick capture runtime guard.
+  try {
+
   const text = document.getElementById("quickText").value.trim();
   const requested = document.getElementById("quickType").value;
   if (!text) return;
+
+  ensureQuickCaptureState();
 
   const resolvedType = quickCaptureResolveTypeForSubmit(text, requested);
   if (resolvedType === "__cancel__") return;
@@ -4658,6 +4709,11 @@ document.getElementById("quickForm")?.addEventListener("submit", function(event)
   document.getElementById("quickText").value = "";
   saveState();
   render();
+  } catch (error) {
+    console.error("Quick Capture failed", error);
+    if (typeof addDiagnostic === "function") addDiagnostic("Quick Capture", error, "bad");
+    alert("Quick Capture failed before creating the item: " + (error.message || error));
+  }
 }, true);
 
 document.addEventListener("click", e=>{const b=e.target.closest("[data-v48]"); if(!b)return; const action=b.dataset.v48,id=b.dataset.id; v48EnsureArrays(); if(action==="equipmentToPrep"){const x=state.equipmentChecklists.find(y=>y.id===id); if(x)state.prepItems.push({id:uid(),text:`${x.activity}: ${v48Items(x.items).join(", ")}`,owner:"Both",date:addDays(todayIso(),1),done:false,createdAt:Date.now()})} if(action==="deleteEquipment")state.equipmentChecklists=state.equipmentChecklists.filter(x=>x.id!==id); if(action==="toggleChore"){const c=state.chores.find(x=>x.id===id); if(c)c.status=c.status==="Done"?"Open":"Done"} if(action==="payChore"){const c=state.chores.find(x=>x.id===id); if(c)c.paid=true} if(action==="deleteChore")state.chores=state.chores.filter(x=>x.id!==id); saveState(); render()});

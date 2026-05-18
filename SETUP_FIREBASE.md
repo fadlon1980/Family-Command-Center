@@ -1,4 +1,4 @@
-# V4.8.39 Setup Notes
+# V4.8.40 Setup Notes
 
 No Firestore rules change is required if V4.8.31 rules are already published.
 
@@ -9,7 +9,7 @@ Upload all files to GitHub Pages.
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-39
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-40
 ```
 
 Use hard refresh once:
@@ -20,28 +20,22 @@ Ctrl + Shift + R
 
 ## QC
 
-Confirm phone/browser date is 05/17/2026.
-
 Quick Capture:
 
 ```text
 pay for Daniel Hebrew lesson 260$ by tomorrow
 ```
 
+Choose Payment.
+
 Expected:
 
-- Bucket prompt appears
-- Choose Payment
+- Item appears under Payments
+- Item appears under Calendar as payment due reminder
 - Payment name = Hebrew lesson
 - Owner / child = Daniel
 - Amount = 260
-- Due date = 05/18/2026
-- Calendar reminder date = 05/18/2026
+- Due date = tomorrow using local date
+- No runtime error alert
 
-Then test:
-
-```text
-pay from Daniel Hebrew lesson 260$ by tomorrow
-```
-
-Expected: same result.
+If an alert appears, copy its exact text.
