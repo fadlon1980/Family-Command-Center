@@ -660,7 +660,6 @@ function extractDate(text) {
     if (lower.includes(name)) return nextWeekday(day);
   }
 
-  // Supports "15 May", "15th of May", "May 15", "May 15th".
   const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 
   const dayMonth = lower.match(
@@ -689,26 +688,18 @@ function extractDate(text) {
 
     if (monthIndex >= 0 && day >= 1 && day <= 31) {
       const now = new Date();
-      let year = now.getFullYear();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      let candidate = new Date(year, monthIndex, day);
 
-      if (candidate < today) {
-        candidate = new Date(year + 1, monthIndex, day);
-      }
-
-      return isoFromDate(candidate);
+      // V4.8.35: keep typed month/day in the current year.
+      // If the user wants another year, they can type 2027-05-15.
+      return isoFromDate(new Date(now.getFullYear(), monthIndex, day));
     }
   }
 
-  // Supports 2026-05-15.
   const iso = lower.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
   if (iso) {
     return isoFromDate(new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
   }
 
-  // Preserve current behavior for 5/15 as MM/DD.
-  // If first number > 12, treat as DD/MM.
   const numeric = lower.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
   if (numeric) {
     const now = new Date();
@@ -734,6 +725,7 @@ function extractDate(text) {
 
   return "";
 }
+
 
 
 function nextWeekday(targetDay) {
@@ -884,16 +876,30 @@ function chooseQuickCaptureType(text, signals) {
 }
 
 function cleanPaymentCaptureName(text) {
-  return String(text || "")
-    .replace(/^(pay|paid|payment)\s+(for\s+)?/i, "")
-    .replace(/\bby\s+(today|tomorrow|next\s+\w+|\w+\s*\d{1,2}|\d{1,2}\s*\w+|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/gi, "")
-    .replace(/\bfor\s+[A-Za-z][A-Za-z'-]*\b/gi, "")
+  let result = String(text || "").trim();
+
+  result = result.replace(/^(pay|paid|payment)\s+(for\s+)?/i, "");
+
+  // Remove currency/amount.
+  result = result
     .replace(/(?:\$|usd\s*|dollars?\s*|₪)\s*[0-9]+(?:[.,][0-9]{1,2})?/gi, "")
     .replace(/\b[0-9]+(?:[.,][0-9]{1,2})?\s*(?:usd|dollars?|\$|₪)\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim() || text;
-}
+    .replace(/\b(?:amount|cost|fee|price|tuition)\s*[:=]?\s*[0-9]+(?:[.,][0-9]{1,2})?\b/gi, "");
 
+  // Remove due-date phrase.
+  result = result
+    .replace(/\bby\s+(today|tomorrow)\b/gi, "")
+    .replace(/\bby\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, "")
+    .replace(/\bby\s+\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\b/gi, "")
+    .replace(/\bby\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+\d{1,2}(?:st|nd|rd|th)?\b/gi, "")
+    .replace(/\bby\s+20\d{2}-\d{1,2}-\d{1,2}\b/gi, "")
+    .replace(/\bby\s+\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/gi, "");
+
+  // Remove only the trailing child/person phrase, not text like "for Hebrew lesson".
+  result = result.replace(/\s+for\s+[A-Za-z][A-Za-z'-]*\s*$/i, "");
+
+  return result.replace(/\s+/g, " ").trim() || String(text || "").trim();
+}
 
 function inferQuickType(text, requestedType) {
   if (requestedType !== "auto") return requestedType;
@@ -3156,7 +3162,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.34";
+const APP_VERSION = "4.8.35";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -4116,60 +4122,186 @@ function v48Render(){v48EnsureArrays(); ["choreChild","equipmentChild"].forEach(
 const __v48OriginalRender = render;
 render = function(){ __v48OriginalRender(); v48Render(); };
 
+
+function quickCaptureResolveTypeForSubmit(text, requestedType) {
+  const requested = requestedType || "auto";
+  const signals = quickCaptureSignals(text);
+
+  if (!signals.length) return requested === "auto" ? "task" : requested;
+
+  // V4.8.35: Always ask when multiple buckets are possible.
+  // If the user explicitly selected a bucket, it will be the default choice when present.
+  if (signals.length > 1) {
+    const labels = {
+      shopping: "Shopping",
+      payment: "Payment + calendar due-date reminder",
+      event: "Calendar event",
+      schoolwork: "School",
+      admin: "Admin / forms",
+      decision: "Decision",
+      chore: "Chore",
+      checklist: "Equipment checklist",
+      reminder: "Reminder / prep",
+      prep: "Tomorrow prep",
+      inbox: "Inbox note",
+      task: "Task"
+    };
+
+    const ordered = [...signals];
+    if (requested !== "auto" && ordered.includes(requested)) {
+      ordered.splice(ordered.indexOf(requested), 1);
+      ordered.unshift(requested);
+    }
+
+    const lines = [
+      "This quick capture can fit more than one bucket.",
+      "",
+      `Text: ${text}`,
+      "",
+      "Choose one option by number:",
+      ""
+    ];
+
+    ordered.forEach((signal, index) => {
+      lines.push(`${index + 1}. ${labels[signal] || signal}`);
+    });
+
+    lines.push("");
+    lines.push("Cancel = do nothing.");
+
+    const defaultIndex = requested !== "auto" && ordered.includes(requested)
+      ? ordered.indexOf(requested)
+      : Math.max(0, ordered.indexOf("payment"));
+
+    const answer = prompt(lines.join("\n"), String(defaultIndex + 1));
+    if (answer === null) return "__cancel__";
+
+    const number = Number(String(answer).trim());
+    if (Number.isInteger(number) && number >= 1 && number <= ordered.length) {
+      return ordered[number - 1];
+    }
+
+    const key = String(answer).trim().toLowerCase();
+    return ordered.find(signal => signal === key || (labels[signal] || "").toLowerCase().includes(key)) || ordered[defaultIndex] || ordered[0];
+  }
+
+  return requested === "auto" ? signals[0] : requested;
+}
+
+function quickCaptureSmartForSubmit(text, type) {
+  return {
+    type,
+    date: extractDate(text),
+    amount: extractAmount(text),
+    child: v48ChildFromText(text)
+  };
+}
+
+
 document.getElementById("quickForm")?.addEventListener("submit", function(event){
-  event.preventDefault(); event.stopImmediatePropagation();
-  const text=document.getElementById("quickText").value.trim(), requested=document.getElementById("quickType").value; if(!text)return; const smart=v48Smart(text,requested); const type=smart.type, date=smart.date;
-  if(type==="checklist"){const m=text.match(/(?:checklist|equipment|pack list)\s*(?:for)?\s*([^:,-]+)?[:,-]?\s*(.*)/i); const activity=(m?.[1]||"Activity").trim(); const raw=m?.[2]||text; state.equipmentChecklists.push({id:uid(),activity,child:smart.child,items:v48Items(raw.replace(/^(checklist|equipment|pack list)\s*/i,"")),createdAt:Date.now()}); v48ShowFeedback(`Smart capture: added equipment checklist for ${activity}.`)}
-  else if(type==="chore"){state.chores.push({id:uid(),title:text.replace(/^chore\s*:?/i,"").replace(/\$?\s?\d+(?:\.\d{1,2})?/,"").trim()||text,child:smart.child||v48KidName(),due:date||todayIso(),allowance:smart.amount||0,frequency:"One-time",status:"Open",paid:false,createdAt:Date.now()}); v48ShowFeedback("Smart capture: added chore.")}
-  else if(type==="reminder"){state.reminders.push({id:uid(),text,due:date||addDays(todayIso(),1),done:false,createdAt:Date.now()}); state.prepItems.push({id:uid(),text:text.replace(/^remind(?:er)?\s*:?/i,"").trim()||text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()}); v48ShowFeedback("Smart capture: added reminder as prep item.")}
-  else { // Delegate old categories with improved feedback by mimicking current logic lightly
-    const oldType = type;
-    if(oldType==="shopping"){text.replace(/^(buy|shopping)\s*:?/i,"").split(",").map(x=>x.trim()).filter(Boolean).forEach(name=>state.shopping.push({id:uid(),name,store:"Grocery",done:false,createdAt:Date.now()}));}
-    else if(oldType==="payment"){
-      const paid = text.toLowerCase().startsWith("paid ");
-      const parsedDate = date || todayIso();
-      const cleanName = cleanPaymentCaptureName(text);
-      const child = smart.child || "Both";
-      state.payments.push({
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  const text = document.getElementById("quickText").value.trim();
+  const requested = document.getElementById("quickType").value;
+  if (!text) return;
+
+  const resolvedType = quickCaptureResolveTypeForSubmit(text, requested);
+  if (resolvedType === "__cancel__") return;
+
+  const smart = quickCaptureSmartForSubmit(text, resolvedType);
+  const type = smart.type;
+  const date = smart.date;
+
+  if(type==="checklist"){
+    const m = text.match(/(?:checklist|equipment|pack list)\s*(?:for)?\s*([^:,-]+)?[:,-]?\s*(.*)/i);
+    const activity = (m?.[1] || "Activity").trim();
+    const raw = m?.[2] || text;
+    state.equipmentChecklists.push({ id: uid(), activity, child: smart.child, items: v48Items(raw.replace(/^(checklist|equipment|pack list)\s*/i, "")), createdAt: Date.now() });
+    v48ShowFeedback(`Smart capture: added equipment checklist for ${activity}.`);
+  }
+  else if(type==="chore"){
+    state.chores.push({ id: uid(), title: text.replace(/^chore\s*:?/i, "").replace(/\$?\s?\d+(?:\.\d{1,2})?/, "").trim() || text, child: smart.child || v48KidName(), due: date || todayIso(), allowance: smart.amount || 0, frequency: "One-time", status: "Open", paid: false, createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added chore.");
+  }
+  else if(type==="reminder"){
+    state.reminders.push({ id: uid(), text, due: date || addDays(todayIso(), 1), done: false, createdAt: Date.now() });
+    state.prepItems.push({ id: uid(), text: text.replace(/^remind(?:er)?\s*:?/i, "").trim() || text, owner: smart.child || "Both", date: date || addDays(todayIso(), 1), done: false, createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added reminder as prep item.");
+  }
+  else if(type==="shopping"){
+    text.replace(/^(buy|shopping)\s*:?/i, "").split(",").map(x => x.trim()).filter(Boolean).forEach(name => state.shopping.push({ id: uid(), name, store: "Grocery", done: false, createdAt: Date.now() }));
+    v48ShowFeedback("Smart capture: added shopping.");
+  }
+  else if(type==="payment"){
+    const paid = text.toLowerCase().startsWith("paid ");
+    const parsedDate = date || "";
+    const cleanName = cleanPaymentCaptureName(text);
+    const child = smart.child && smart.child !== "All family" ? smart.child : "Both";
+
+    state.payments.push({
+      id: uid(),
+      name: cleanName,
+      amount: smart.amount,
+      due: parsedDate || todayIso(),
+      category: child !== "Both" ? "Kids" : "Other",
+      owner: child,
+      frequency: "One-time",
+      method: "Credit card",
+      status: paid ? "Paid" : "Upcoming",
+      paidDate: paid ? todayIso() : "",
+      notes: "Added from smart capture",
+      createdAt: Date.now()
+    });
+
+    // V4.8.35: create calendar reminder for any unpaid payment with an explicit due date,
+    // including overdue dates such as "15 May". Do not require future-only.
+    if (!paid && parsedDate) {
+      state.events.push({
         id: uid(),
-        name: cleanName,
-        amount: smart.amount,
-        due: parsedDate,
-        category: child !== "Both" ? "Kids" : "Other",
-        owner: child,
-        frequency: "One-time",
-        method: "Credit card",
-        status: paid ? "Paid" : "Upcoming",
-        paidDate: paid ? todayIso() : "",
-        notes: "Added from smart capture",
+        title: "Payment due: " + cleanName,
+        person: child,
+        date: parsedDate,
+        time: "",
+        location: "",
+        notes: "Auto-created from payment quick capture",
         createdAt: Date.now()
       });
-
-      if (!paid && parsedDate && parsedDate > todayIso()) {
-        state.events.push({
-          id: uid(),
-          title: "Payment due: " + cleanName,
-          person: child,
-          date: parsedDate,
-          time: "",
-          location: "",
-          notes: "Auto-created from payment quick capture",
-          createdAt: Date.now()
-        });
-        v48ShowFeedback("Smart capture: added payment + calendar reminder for " + formatDate(parsedDate) + ".");
-      } else {
-        v48ShowFeedback("Smart capture: added payment.");
-      }
+      v48ShowFeedback("Smart capture: added payment + calendar reminder for " + formatDate(parsedDate) + ".");
+    } else {
+      v48ShowFeedback("Smart capture: added payment.");
     }
-    else if(oldType==="schoolwork"){const l=text.toLowerCase(); const itemType=l.includes("exam")?"Exam":l.includes("test")?"Test":l.includes("quiz")?"Quiz":l.includes("project")?"Project":l.includes("reading")?"Reading":"School"; state.schoolItems.push({id:uid(),title:text,child:smart.child,type:itemType,subject:"",due:date||todayIso(),priority:["Exam","Test","Quiz"].includes(itemType)?"High":"Normal",status:"Open",notes:"Added from smart capture",createdAt:Date.now()});}
-    else if(oldType==="event"){state.events.push({id:uid(),title:text,person:smart.child || "All family",date:date||todayIso(),time:extractTime(text),location:"",notes:"Added from smart capture",createdAt:Date.now()});}
-    else if(oldType==="prep"){state.prepItems.push({id:uid(),text,owner:"Both",date:date||addDays(todayIso(),1),done:false,createdAt:Date.now()});}
-    else if(oldType==="decision"){state.decisions.push({id:uid(),title:text.replace(/^decision\s*:?/i,"").trim(),owner:"Both",due:date,options:"",status:"Open",createdAt:Date.now()});}
-    else if(oldType==="admin"){state.adminItems.push({id:uid(),title:text,category:"Other",owner:"Both",due:date,notes:"Added from smart capture",status:"Open",createdAt:Date.now()});}
-    else {state.tasks.push({id:uid(),title:text,owner:"Both",due:date,category:"Other",priority:"Normal",done:false,createdAt:Date.now()});}
-    if (oldType !== "payment") v48ShowFeedback(`Smart capture: added ${oldType}.`)
   }
-  document.getElementById("quickText").value=""; saveState(); render();
+  else if(type==="schoolwork"){
+    const l = text.toLowerCase();
+    const itemType = l.includes("exam") ? "Exam" : l.includes("test") ? "Test" : l.includes("quiz") ? "Quiz" : l.includes("project") ? "Project" : l.includes("reading") ? "Reading" : "School";
+    state.schoolItems.push({ id: uid(), title: text, child: smart.child, type: itemType, subject: "", due: date || todayIso(), priority: ["Exam", "Test", "Quiz"].includes(itemType) ? "High" : "Normal", status: "Open", notes: "Added from smart capture", createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added school item.");
+  }
+  else if(type==="event"){
+    state.events.push({ id: uid(), title: text, person: smart.child || "All family", date: date || todayIso(), time: extractTime(text), location: "", notes: "Added from smart capture", createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added calendar event.");
+  }
+  else if(type==="prep"){
+    state.prepItems.push({ id: uid(), text, owner: smart.child || "Both", date: date || addDays(todayIso(), 1), done: false, createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added prep item.");
+  }
+  else if(type==="decision"){
+    state.decisions.push({ id: uid(), title: text.replace(/^decision\s*:?/i, "").trim(), owner: "Both", due: date, options: "", status: "Open", createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added decision.");
+  }
+  else if(type==="admin"){
+    state.adminItems.push({ id: uid(), title: text, category: "Other", owner: "Both", due: date, notes: "Added from smart capture", status: "Open", createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added admin item.");
+  }
+  else {
+    state.tasks.push({ id: uid(), title: text, owner: "Both", due: date, category: "Other", priority: "Normal", done: false, createdAt: Date.now() });
+    v48ShowFeedback("Smart capture: added task.");
+  }
+
+  document.getElementById("quickText").value = "";
+  saveState();
+  render();
 }, true);
 
 document.addEventListener("click", e=>{const b=e.target.closest("[data-v48]"); if(!b)return; const action=b.dataset.v48,id=b.dataset.id; v48EnsureArrays(); if(action==="equipmentToPrep"){const x=state.equipmentChecklists.find(y=>y.id===id); if(x)state.prepItems.push({id:uid(),text:`${x.activity}: ${v48Items(x.items).join(", ")}`,owner:"Both",date:addDays(todayIso(),1),done:false,createdAt:Date.now()})} if(action==="deleteEquipment")state.equipmentChecklists=state.equipmentChecklists.filter(x=>x.id!==id); if(action==="toggleChore"){const c=state.chores.find(x=>x.id===id); if(c)c.status=c.status==="Done"?"Open":"Done"} if(action==="payChore"){const c=state.chores.find(x=>x.id===id); if(c)c.paid=true} if(action==="deleteChore")state.chores=state.chores.filter(x=>x.id!==id); saveState(); render()});

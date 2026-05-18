@@ -1,79 +1,56 @@
-# Family Command Center PWA V4.8.34 — Parser Hardening / Quick Capture Fixes
+# Family Command Center PWA V4.8.35 — Active Quick Capture Parser Fix
 
-This version is based on V4.8.33 and implements Phase 3 parser hardening.
+This version is based on V4.8.34 and fixes the active Quick Capture handler directly.
 
-## What changed
+## What was fixed
 
-### Better date parsing
-
-Quick Capture now supports:
-
-- `15 May`
-- `May 15`
-- `15th of May`
-- `May 15th`
-- `2026-05-15`
-- `5/15`
-- `tomorrow`
-- `today`
-- weekdays like `Friday`
-
-### Safer time parsing
-
-The app no longer treats random numbers as times.
-
-Examples that should **not** become a time:
-
-- `$260`
-- `Kid 2`
-- `Buy 5 bags`
-
-Examples that should become a time:
-
-- `3pm`
-- `3:30pm`
-- `10:00`
-
-### Better amount parsing
-
-The app now prefers currency/amount signals such as:
-
-- `$260`
-- `260 dollars`
-- `260 USD`
-- `tuition 260`
-
-This avoids reading the `15` in `15 May` as the payment amount.
-
-### Ambiguous Quick Capture asks
-
-When a prompt can fit more than one bucket, the app asks you to choose.
-
-Example:
+Your QC found:
 
 ```text
 Pay for Hebrew lesson $260 by 15 May for Daniel
 ```
 
-Possible choices include:
+Problems in V4.8.34:
 
-- Payment + calendar due-date reminder
-- Calendar event
+- Bucket question did not pop.
+- The item went only under Payments.
+- Due date became the current date instead of 15 May.
 
-### Payment creates calendar reminder
+## V4.8.35 changes
 
-A future unpaid payment creates:
+- Active Quick Capture submit handler now resolves bucket choice directly.
+- If text fits multiple buckets, the bucket prompt is forced.
+- `15 May`, `May 15`, `15th of May`, and `May 15th` are preserved as the typed date in the current year.
+- Payment name cleaning now preserves `Hebrew lesson`.
+- Only the trailing child phrase, such as `for Daniel`, is removed from the payment name.
+- Unpaid payments with explicit due dates create calendar reminders, including overdue dates.
+- `$260` is not treated as time.
 
-- one payment
-- one calendar due-date reminder
+## Test
 
-Paid items do not create future reminders.
+Use Quick Capture:
+
+```text
+Pay for Hebrew lesson $260 by 15 May for Daniel
+```
+
+Expected:
+
+- Bucket prompt appears.
+- Choose Payment.
+- One payment is created.
+- One calendar reminder is created.
+- Payment name = Hebrew lesson.
+- Amount = 260.
+- Due date = 15 May.
+- No false time from $260.
 
 ## Still included
 
+- V4.8.34 parser hardening
 - V4.8.33 mobile save bar fix
 - V4.8.32 code cleanup
-- V4.8.31 Firestore rules safety
+- V4.8.31 rules and service worker safety
 - V4.8.30 quota-burn fix
 - Manual save mode
 - Global Manual Save Bar
@@ -82,7 +59,7 @@ Paid items do not create future reminders.
 ## Open after upload
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-34
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-35
 ```
 
 No Firestore rules change is required if V4.8.31 rules are already published.

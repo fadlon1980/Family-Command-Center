@@ -1,4 +1,4 @@
-# V4.8.34 Setup Notes
+# V4.8.35 Setup Notes
 
 No Firestore rules change is required if V4.8.31 rules are already published.
 
@@ -9,7 +9,7 @@ Upload all files to GitHub Pages.
 Open:
 
 ```text
-https://fadlon1980.github.io/Family-Command-Center/?version=4-8-34
+https://fadlon1980.github.io/Family-Command-Center/?version=4-8-35
 ```
 
 Use hard refresh once:
@@ -18,37 +18,21 @@ Use hard refresh once:
 Ctrl + Shift + R
 ```
 
-## Parser QC
+## QC
 
-Test these Quick Capture examples:
+1. Quick Capture:
 
 ```text
 Pay for Hebrew lesson $260 by 15 May for Daniel
 ```
 
-Expected:
-- app asks bucket if ambiguous
-- choose Payment
-- one payment is created
-- one calendar reminder is created
-- amount = 260
-- due date = May 15
-- no time is created from $260
+2. Expected:
+   - bucket prompt appears
+   - choose Payment
+   - one payment
+   - one calendar reminder
+   - due date = 15 May
+   - amount = 260
+   - payment name = Hebrew lesson
 
-```text
-Daniel Hebrew lesson May 15th 3pm
-```
-
-Expected:
-- event date = May 15
-- event time = 15:00
-
-```text
-Buy 5 bags
-```
-
-Expected:
-- shopping item
-- no time is created
-
-Then click Save to cloud once if you want to publish the changes.
+3. Then save manually with Save to cloud if the local result is correct.
