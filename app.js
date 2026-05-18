@@ -232,6 +232,80 @@ function loadState() {
 const MANUAL_SAVE_MODE = true;
 const MANUAL_PENDING_KEY = "family-command-center-manual-pending-local-change";
 
+const LAST_CLOUD_VERSION_KEY = "family-command-center-last-cloud-version";
+
+function getLastCloudVersion() {
+  try {
+    return localStorage.getItem(LAST_CLOUD_VERSION_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function setLastCloudVersion(version) {
+  const value = version || new Date().toISOString();
+  try {
+    localStorage.setItem(LAST_CLOUD_VERSION_KEY, value);
+  } catch {}
+}
+
+function compareIsoVersion(a, b) {
+  if (!a || !b) return 0;
+  const aTime = new Date(a).getTime();
+  const bTime = new Date(b).getTime();
+  if (!Number.isFinite(aTime) || !Number.isFinite(bTime)) return 0;
+  if (aTime > bTime) return 1;
+  if (aTime < bTime) return -1;
+  return 0;
+}
+
+function getCloudVersionFromSnapshot(snap) {
+  const data = snap?.data?.() || {};
+  return data.clientUpdatedAt || data.updatedAt?.toDate?.()?.toISOString?.() || "";
+}
+
+async function checkManualSaveConflict(familyId) {
+  if (!cloud?.fb || !cloud?.db || !familyId) return { conflict: false };
+
+  const stateRef = cloud.fb.doc(cloud.db, "families", familyId, "state", "main");
+  const snap = await cloud.fb.getDoc(stateRef);
+
+  if (!snap.exists()) {
+    return { conflict: false, cloudVersion: "" };
+  }
+
+  const cloudVersion = getCloudVersionFromSnapshot(snap);
+  const lastKnownVersion = getLastCloudVersion();
+
+  if (cloudVersion && lastKnownVersion && compareIsoVersion(cloudVersion, lastKnownVersion) > 0) {
+    return {
+      conflict: true,
+      cloudVersion,
+      lastKnownVersion,
+      updatedByEmail: snap.data()?.updatedByEmail || "",
+      appVersion: snap.data()?.appVersion || ""
+    };
+  }
+
+  // If we have no local version marker yet, do not block the first manual save,
+  // but record the cloud version after a successful pull/save.
+  return { conflict: false, cloudVersion, lastKnownVersion };
+}
+
+function conflictMessage(details) {
+  const savedBy = details.updatedByEmail ? ` by ${details.updatedByEmail}` : "";
+  const cloudTime = details.cloudVersion ? new Date(details.cloudVersion).toLocaleString() : "a newer time";
+  const lastTime = details.lastKnownVersion ? new Date(details.lastKnownVersion).toLocaleString() : "unknown";
+
+  return (
+    `Someone else may have saved newer cloud changes${savedBy} at ${cloudTime}.\n\n` +
+    `Your last pulled/saved cloud version was: ${lastTime}.\n\n` +
+    "Saving now may overwrite their changes because the app stores the family data in one shared document.\n\n" +
+    "Click OK to save anyway, or Cancel to stop and use Pull latest first."
+  );
+}
+
+
 function setManualSaveStatus(message, level = "warn") {
   const el = document.getElementById("manualSaveStatus");
   if (el) {
@@ -395,7 +469,42 @@ async function manualSaveLocalChangesToCloud() {
       throw new Error("Missing Family ID.");
     }
 
+    setManualSaveStatus("Checking for newer cloud changes before saving...", "warn");
+
+    try {
+      const conflict = await checkManualSaveConflict(familyId);
+      if (conflict.conflict) {
+        const proceed = confirm(conflictMessage(conflict));
+        if (!proceed) {
+          setManualSaveStatus("Save cancelled. Pull latest from cloud before saving.", "warn");
+          if (typeof addDiagnosticInfo === "function") {
+            addDiagnosticInfo(
+              "Manual save conflict",
+              "Save cancelled",
+              "Cloud has newer data than this device last pulled/saved.",
+              "Click Pull latest, review the data, then save again if needed.",
+              "warn",
+              `cloudVersion=${conflict.cloudVersion} lastKnownVersion=${conflict.lastKnownVersion}`
+            );
+          }
+          return;
+        }
+      }
+    } catch (conflictError) {
+      const proceed = confirm(
+        "Could not complete the conflict check before saving.\n\n" +
+        "Reason: " + (conflictError.message || conflictError) + "\n\n" +
+        "Click OK to save anyway, or Cancel to stop."
+      );
+      if (!proceed) {
+        setManualSaveStatus("Save cancelled because conflict check failed.", "warn");
+        return;
+      }
+    }
+
     setManualSaveStatus("Saving local changes to cloud manually. Please wait...", "warn");
+
+    const clientUpdatedAt = new Date().toISOString();
 
     await manualRestPatch(
       `families/${familyId}/state/main`,
@@ -403,24 +512,26 @@ async function manualSaveLocalChangesToCloud() {
         data: state,
         updatedBy: cloud.user.uid,
         updatedByEmail: cloud.user.email || "",
-        clientUpdatedAt: new Date().toISOString(),
-        appVersion: typeof APP_VERSION !== "undefined" ? APP_VERSION : "4.8.27",
+        clientUpdatedAt,
+        appVersion: typeof APP_VERSION !== "undefined" ? APP_VERSION : "4.8.37",
         writeMethod: "manual-save-mode",
         clientSummary: manualStateSummary()
       },
       30000
     );
 
+    setLastCloudVersion(clientUpdatedAt);
     clearManualPending();
     setManualSaveStatus(`Manual cloud save completed for ${cloud.user.email || "signed-in user"}.`, "good");
+
     if (typeof addDiagnosticInfo === "function") {
       addDiagnosticInfo(
         "Manual cloud save",
         "Manual save succeeded",
-        "Local state was saved to Firestore with manual-save-mode.",
+        "Local state was saved to Firestore with manual-save-mode after conflict check.",
         "Other devices should use Pull latest from cloud before editing.",
         "good",
-        `familyId=${familyId}`
+        `familyId=${familyId} clientUpdatedAt=${clientUpdatedAt}`
       );
     }
   } catch (error) {
@@ -429,6 +540,7 @@ async function manualSaveLocalChangesToCloud() {
     if (typeof addDiagnostic === "function") addDiagnostic("Manual cloud save", error, "bad");
   }
 }
+
 
 async function pullLatestManualFromCloud() {
   try {
@@ -447,20 +559,36 @@ async function pullLatestManualFromCloud() {
 
     if (!snap.exists() || !snap.data()?.data) throw new Error("Cloud state/main is missing.");
 
+    const cloudVersion = getCloudVersionFromSnapshot(snap) || new Date().toISOString();
+
     cloud.applyingRemote = true;
     state = normalizeState(snap.data().data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     cloud.applyingRemote = false;
     cloud.ready = true;
 
+    setLastCloudVersion(cloudVersion);
     clearManualPending();
-    setManualSaveStatus("Pulled latest cloud data. Local pending flag cleared.", "good");
+    setManualSaveStatus(`Pulled latest cloud data from ${new Date(cloudVersion).toLocaleString()}. Local pending flag cleared.`, "good");
+
+    if (typeof addDiagnosticInfo === "function") {
+      addDiagnosticInfo(
+        "Manual pull latest",
+        "Pull latest succeeded",
+        "Cloud state/main was loaded and the last cloud version marker was updated.",
+        "",
+        "good",
+        `familyId=${familyId} cloudVersion=${cloudVersion}`
+      );
+    }
+
     render();
   } catch (error) {
     setManualSaveStatus(`Pull latest failed: ${error.message}`, "bad");
     if (typeof addDiagnostic === "function") addDiagnostic("Manual pull latest", error, "bad");
   }
 }
+
 
 function clearPendingManualFlag() {
   clearManualPending();
@@ -3328,7 +3456,7 @@ async function joinFamilySpace(familyId, inviteCode) {
 
 
 
-const APP_VERSION = "4.8.36";
+const APP_VERSION = "4.8.37";
 const diagnostics = {
   entries: [],
   maxEntries: 30
@@ -3467,6 +3595,7 @@ function getDiagnosticReportText() {
     `Cloud ready: ${Boolean(cloud?.ready)}`,
     `Last error: ${cloud?.lastError || "none"}`,
     `Manual pending local change: ${JSON.stringify(getManualPending?.() || null)}`,
+    `Last known cloud version: ${getLastCloudVersion?.() || "none"}`,
     `User agent: ${navigator.userAgent}`,
     ``,
     `Diagnostics:`
